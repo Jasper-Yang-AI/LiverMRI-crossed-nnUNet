@@ -1,0 +1,97 @@
+study_name: liver_mri_cross_sequence_tumor_seg
+task_type: tumor_segmentation
+
+labels:
+  background: 0
+  tumor: 1
+
+default_source_sequence: T2
+default_targets:
+  - T2WI
+  - DWI
+  - ADC
+  - C-pre
+  - ARTERIAL
+  - PORTAL
+  - DELAY
+
+optional_targets:
+  - T1
+  - InPhase
+  - OutPhase
+
+few_shot_targets:
+  - PORTAL
+  - ARTERIAL
+
+few_shot_fractions:
+  - 0.10
+  - 0.20
+
+sequence_aliases:
+  T2:
+    - T2
+  T2WI:
+    - T2WI
+    - T2W
+  DWI:
+    - DWI
+  ADC:
+    - ADC
+  T1:
+    - T1
+  InPhase:
+    - InPhase
+    - INPHASE
+    - IN_PHASE
+  OutPhase:
+    - OutPhase
+    - OUTPHASE
+    - OUT_PHASE
+  C-pre:
+    - C-pre
+    - CPRE
+    - PRE
+    - PRECONTRAST
+  ARTERIAL:
+    - C+A
+    - AP
+    - ARTERIAL
+  PORTAL:
+    - C+V
+    - VP
+    - PORTAL
+  DELAY:
+    - C+Delay
+    - HP
+    - DELAY
+    - HBP
+
+label_keywords:
+  - label
+  - seg
+  - mask
+  - anno
+
+file_suffixes:
+  nii_gz: .nii.gz
+  nii: .nii
+
+nnunet:
+  trainer: nnUNetTrainer
+  configuration: 3d_fullres
+  ensemble_folds: [0, 1, 2, 3, 4]
+
+metrics:
+  - dice
+  - hd95
+  - lesion_recall
+  - lesion_precision
+  - lesion_f1
+  - volume_relative_error
+
+self_audit:
+  min_cases_per_target: 20
+  max_vendor_missing_rate: 0.30
+  check_label_values: true
+  check_patient_leakage: true

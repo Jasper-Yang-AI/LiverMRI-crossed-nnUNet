@@ -1,0 +1,12 @@
+nnunetv2
+nibabel
+SimpleITK
+numpy
+pandas
+pyyaml
+scikit-learn
+scipy
+matplotlib
+tqdm
+jinja2
+openpyxl
