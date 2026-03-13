@@ -8,9 +8,9 @@ $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location -LiteralPath $RepoRoot
 
 $ROOT = "D:\Dataset003_v2_LiverTumorSeg"
-$NNUNET_RAW = "D:\nnUNet_raw"
-$NNUNET_PREPROCESSED = "D:\nnUNet_preprocessed"
-$NNUNET_RESULTS = "D:\nnUNet_results"
+$NNUNET_RAW = Join-Path $RepoRoot "nnUNet_raw"
+$NNUNET_PREPROCESSED = Join-Path $RepoRoot "nnUNet_preprocessed"
+$NNUNET_RESULTS = Join-Path $RepoRoot "nnUNet_results"
 
 $env:nnUNet_raw = $NNUNET_RAW
 $env:nnUNet_preprocessed = $NNUNET_PREPROCESSED

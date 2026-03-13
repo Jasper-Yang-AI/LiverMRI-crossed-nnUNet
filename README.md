@@ -62,9 +62,6 @@
 
 ## 环境准备
 
-你不需要 clone `nnUNet` 源码。  
-本机 `conda` 环境 `nnu` 已经装好了 `nnunetv2`。
-
 进入环境：
 
 ```powershell
@@ -76,9 +73,9 @@ pip install -r requirements.txt
 设置 nnUNet 路径：
 
 ```powershell
-$env:nnUNet_raw="D:\nnUNet_raw"
-$env:nnUNet_preprocessed="D:\nnUNet_preprocessed"
-$env:nnUNet_results="D:\nnUNet_results"
+$env:nnUNet_raw="D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\nnUNet_raw"
+$env:nnUNet_preprocessed="D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\nnUNet_preprocessed"
+$env:nnUNet_results="D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\nnUNet_results"
 
 New-Item -ItemType Directory -Force -Path $env:nnUNet_raw | Out-Null
 New-Item -ItemType Directory -Force -Path $env:nnUNet_preprocessed | Out-Null
@@ -162,19 +159,6 @@ python scripts/self_audit.py `
 - `U3`: `P456-only -> P1 / P2 / P3 / P456 / E_all`
 - `U4`: `E_all-only -> P1 / P2 / P3 / P456 / E_all`
 
-### 为什么前面只重点提了 3 个
-
-前面那一节说的不是“只跑 3 个”，而是“建议优先跑的 3 个核心实验”：
-
-- `A`
-  作为 `P1-only` 基线
-- `M2`
-  作为 `All-Plain` 主实验
-- `M3`
-  作为 `All-Seq` 上界实验
-
-这 3 个最容易先形成论文主线。
-
 ### 完整推荐顺序
 
 如果你要按完整设计跑，建议顺序是：
@@ -191,7 +175,7 @@ python scripts/self_audit.py `
 其中：
 
 - `A / M1 / M2 / M3` 是主线实验
-- `U1 / U2 / U3 / U4` 更像补充对照和 ablation
+- `U1 / U2 / U3 / U4` 补充对照和 ablation
 
 ## 手动单独跑某个实验
 
@@ -202,13 +186,13 @@ python scripts/export_nnunet_source_dataset.py `
   --manifest outputs/manifest_with_folds.csv `
   --study-config configs/study_config.yaml `
   --experiment-id A `
-  --nnunet-raw "D:\nnUNet_raw"
+  --nnunet-raw "D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\nnUNet_raw"
 
 python scripts/generate_splits_json.py `
   --manifest outputs/manifest_with_folds.csv `
   --study-config configs/study_config.yaml `
   --experiment-id A `
-  --nnunet-preprocessed "D:\nnUNet_preprocessed"
+  --nnunet-preprocessed "D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\nnUNet_preprocessed"
 
 nnUNetv2_plan_and_preprocess -d 311 --verify_dataset_integrity
 nnUNetv2_train 311 3d_fullres 0
