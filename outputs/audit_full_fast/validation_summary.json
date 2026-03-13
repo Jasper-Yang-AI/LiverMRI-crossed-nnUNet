@@ -1,0 +1,25 @@
+{
+  "n_rows": 7059,
+  "n_patients": 1013,
+  "subset_counts": {
+    "train": 6251,
+    "test": 808
+  },
+  "sequence_counts": {
+    "DELAY": 1012,
+    "ARTERIAL": 1011,
+    "PORTAL": 1011,
+    "T1": 512,
+    "T2": 512,
+    "ADC": 511,
+    "C-pre": 498,
+    "DWI": 498,
+    "InPhase": 498,
+    "OutPhase": 498,
+    "T2WI": 498
+  },
+  "missing_vendor_rate": 1.0,
+  "n_issues": 0,
+  "max_rows": null,
+  "skip_label_values": true
+}

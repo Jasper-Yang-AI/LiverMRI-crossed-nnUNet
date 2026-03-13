@@ -29,6 +29,18 @@ def build_run_lines(experiment_id: str, exp: dict, args) -> tuple[list[str], lis
 
     common_py = f"python scripts"
     ps_lines = [
+        "$ErrorActionPreference = \"Stop\"",
+        "$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path",
+        "$RepoRoot = (Resolve-Path (Join-Path $ScriptRoot '..\\..\\..\\..')).Path",
+        "Set-Location -LiteralPath $RepoRoot",
+        "$env:nnUNet_raw = Join-Path $RepoRoot 'nnUNet_raw'",
+        "$env:nnUNet_preprocessed = Join-Path $RepoRoot 'nnUNet_preprocessed'",
+        "$env:nnUNet_results = Join-Path $RepoRoot 'nnUNet_results'",
+        "$env:CUDA_DEVICE_ORDER = 'PCI_BUS_ID'",
+        f"$env:CUDA_VISIBLE_DEVICES = '{args.gpu_id}'",
+        "New-Item -ItemType Directory -Force -Path $env:nnUNet_raw | Out-Null",
+        "New-Item -ItemType Directory -Force -Path $env:nnUNet_preprocessed | Out-Null",
+        "New-Item -ItemType Directory -Force -Path $env:nnUNet_results | Out-Null",
         f"{common_py}\\export_nnunet_source_dataset.py --manifest {quote_ps(args.manifest)} --study-config {quote_ps(args.study_config)} --experiment-id {experiment_id} --nnunet-raw {quote_ps(args.nnunet_raw)}",
         f"{common_py}\\generate_splits_json.py --manifest {quote_ps(args.manifest)} --study-config {quote_ps(args.study_config)} --experiment-id {experiment_id} --nnunet-preprocessed {quote_ps(args.nnunet_preprocessed)}",
         f"nnUNetv2_plan_and_preprocess -d {dataset_id} --verify_dataset_integrity",
@@ -53,6 +65,17 @@ def build_run_lines(experiment_id: str, exp: dict, args) -> tuple[list[str], lis
     manuscript_path_sh = Path(args.manuscript_dir) / f"manuscript_{experiment_id}.md"
 
     sh_lines = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "SCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"",
+        "REPO_ROOT=\"$(cd \"${SCRIPT_DIR}/../../../..\" && pwd)\"",
+        "cd \"${REPO_ROOT}\"",
+        "export nnUNet_raw=\"${REPO_ROOT}/nnUNet_raw\"",
+        "export nnUNet_preprocessed=\"${REPO_ROOT}/nnUNet_preprocessed\"",
+        "export nnUNet_results=\"${REPO_ROOT}/nnUNet_results\"",
+        "export CUDA_DEVICE_ORDER=PCI_BUS_ID",
+        f"export CUDA_VISIBLE_DEVICES={args.gpu_id}",
+        "mkdir -p \"${nnUNet_raw}\" \"${nnUNet_preprocessed}\" \"${nnUNet_results}\"",
         f"python scripts/export_nnunet_source_dataset.py --manifest {quote_sh(args.manifest)} --study-config {quote_sh(args.study_config)} --experiment-id {experiment_id} --nnunet-raw {quote_sh(args.nnunet_raw)}",
         f"python scripts/generate_splits_json.py --manifest {quote_sh(args.manifest)} --study-config {quote_sh(args.study_config)} --experiment-id {experiment_id} --nnunet-preprocessed {quote_sh(args.nnunet_preprocessed)}",
         f"nnUNetv2_plan_and_preprocess -d {dataset_id} --verify_dataset_integrity",
@@ -83,6 +106,7 @@ def main():
     parser.add_argument("--template", default="manuscript/manuscript_template.md")
     parser.add_argument("--out-dir", default="outputs/experiments")
     parser.add_argument("--manuscript-dir", default="manuscript")
+    parser.add_argument("--gpu-id", default="1", help="CUDA visible GPU id for generated run scripts")
     args = parser.parse_args()
 
     cfg = load_yaml(args.study_config)

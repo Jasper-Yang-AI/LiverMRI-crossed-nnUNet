@@ -1,0 +1,9 @@
+﻿experiment_id,description,dataset_id,source_tag,source_bundle,source_members,n_train_cases,n_train_patients,targets,n_external_patients_total
+A,"train P1 only, test on P1/P2/P3/P456/E_all",311,A,P1,T2+T2WI,909,909,P1+P2+P3+P456+E_all,101
+M1,train on P1+P2+P3,312,M1,M1,T2+T2WI+DWI+ADC,1817,910,P1+P2+P3+P456+E_all,101
+M2,train on all plain MRI sequences,313,M2,M2,T2+T2WI+DWI+ADC+T1+InPhase+OutPhase+C-pre,3520,910,P1+P2+P3+P456+E_all,101
+M3,train on all sequences,314,M3,M3,T2+T2WI+DWI+ADC+T1+InPhase+OutPhase+C-pre+ARTERIAL+PORTAL+DELAY,6251,912,P1+P2+P3+P456+E_all,101
+U1,train on P2 only,315,U1,U1,DWI,397,397,P1+P2+P3+P456+E_all,101
+U2,train on P3 only,316,U2,U2,ADC,511,511,P1+P2+P3+P456+E_all,101
+U3,train on P456 only,317,U3,U3,T1+InPhase+OutPhase+C-pre,1703,909,P1+P2+P3+P456+E_all,101
+U4,train on E_all only,318,U4,U4,ARTERIAL+PORTAL+DELAY,2731,912,P1+P2+P3+P456+E_all,101

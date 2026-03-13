@@ -1,6 +1,42 @@
 __pycache__/
 *.pyc
-outputs/*
-!outputs/.gitkeep
 .env
 .venv
+
+# Large medical imaging files
+*.nii
+*.nii.gz
+*.nrrd
+*.mha
+*.mhd
+*.dcm
+
+# Model and training artifacts
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.h5
+*.npz
+*.npy
+
+# nnUNet generated datasets and training outputs
+nnUNet_raw/
+nnUNet_preprocessed/
+nnUNet_results/
+outputs/nnUNet_raw/
+outputs/nnUNet_preprocessed/
+outputs/nnUNet_results/
+
+# Ignore bulky outputs by default, keep lightweight reports and scripts
+outputs/**
+!outputs/.gitkeep
+!outputs/**/
+!outputs/**/*.md
+!outputs/**/*.csv
+!outputs/**/*.json
+!outputs/**/*.yaml
+!outputs/**/*.yml
+!outputs/**/*.txt
+!outputs/**/*.ps1
+!outputs/**/*.sh

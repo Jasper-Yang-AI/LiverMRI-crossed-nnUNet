@@ -1,0 +1,10 @@
+﻿bundle,subset,members,n_cases,n_patients
+P1,test,T2+T2WI,101,101
+P1,train,T2+T2WI,909,909
+P2,test,DWI,101,101
+P2,train,DWI,397,397
+P3,train,ADC,511,511
+P456,test,T1+InPhase+OutPhase+C-pre,303,101
+P456,train,T1+InPhase+OutPhase+C-pre,1703,909
+E_all,test,ARTERIAL+PORTAL+DELAY,303,101
+E_all,train,ARTERIAL+PORTAL+DELAY,2731,912

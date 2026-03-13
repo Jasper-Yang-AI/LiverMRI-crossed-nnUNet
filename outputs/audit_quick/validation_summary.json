@@ -1,0 +1,19 @@
+{
+  "n_rows": 200,
+  "n_patients": 34,
+  "subset_counts": {
+    "train": 200
+  },
+  "sequence_counts": {
+    "ADC": 34,
+    "ARTERIAL": 34,
+    "DELAY": 33,
+    "T1": 33,
+    "T2": 33,
+    "PORTAL": 33
+  },
+  "missing_vendor_rate": 1.0,
+  "n_issues": 0,
+  "max_rows": 200,
+  "skip_label_values": true
+}
