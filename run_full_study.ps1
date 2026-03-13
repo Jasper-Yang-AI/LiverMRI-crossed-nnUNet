@@ -1,31 +1,42 @@
-# PowerShell end-to-end command template
-# Edit paths first.
+# PowerShell study preparation entrypoint
+# This script runs the shared preprocessing steps once,
+# then generates runnable scripts for experiments A, M1, M2, M3, U1, U2, U3, U4.
 
-$ROOT="D:\Dataset003_v2_LiverTumorSeg"
-$NNUNET_RAW="D:\nnUNet_raw"
-$NNUNET_PREPROCESSED="D:\nnUNet_preprocessed"
+$ErrorActionPreference = "Stop"
 
-python scripts/propose_manifest.py --root $ROOT --out outputs/manifest_proposed.csv
-Write-Host "Please manually review outputs/manifest_proposed.csv and save reviewed file as outputs/manifest_reviewed.csv"
+$RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location -LiteralPath $RepoRoot
 
-python scripts/validate_manifest.py --manifest outputs/manifest_reviewed.csv --study-config configs/study_config.yaml --out-dir outputs/audit
-python scripts/assign_folds.py --manifest outputs/audit/manifest_validated.csv --n-folds 5 --seed 3407 --out outputs/manifest_with_folds.csv
-python scripts/self_audit.py --manifest outputs/manifest_with_folds.csv --study-config configs/study_config.yaml --out-dir outputs/audit
+$ROOT = "D:\Dataset003_v2_LiverTumorSeg"
+$NNUNET_RAW = "D:\nnUNet_raw"
+$NNUNET_PREPROCESSED = "D:\nnUNet_preprocessed"
+$NNUNET_RESULTS = "D:\nnUNet_results"
 
-python scripts/export_nnunet_source_dataset.py --manifest outputs/manifest_with_folds.csv --study-config configs/study_config.yaml --dataset-id 301 --seq-group T2 --nnunet-raw $NNUNET_RAW
-python scripts/generate_splits_json.py --manifest outputs/manifest_with_folds.csv --seq-group T2 --dataset-id 301 --nnunet-preprocessed $NNUNET_PREPROCESSED
+$env:nnUNet_raw = $NNUNET_RAW
+$env:nnUNet_preprocessed = $NNUNET_PREPROCESSED
+$env:nnUNet_results = $NNUNET_RESULTS
 
-nnUNetv2_plan_and_preprocess -d 301 --verify_dataset_integrity
-nnUNetv2_train 301 3d_fullres 0
-nnUNetv2_train 301 3d_fullres 1
-nnUNetv2_train 301 3d_fullres 2
-nnUNetv2_train 301 3d_fullres 3
-nnUNetv2_train 301 3d_fullres 4
+New-Item -ItemType Directory -Force -Path $NNUNET_RAW | Out-Null
+New-Item -ItemType Directory -Force -Path $NNUNET_PREPROCESSED | Out-Null
+New-Item -ItemType Directory -Force -Path $NNUNET_RESULTS | Out-Null
 
-python scripts/export_target_test_sets.py --manifest outputs/manifest_with_folds.csv --study-config configs/study_config.yaml --source-seq T2 --targets T2WI DWI ADC C-pre ARTERIAL PORTAL DELAY --out-dir outputs/targets
-. .\outputs\commands\infer_targets.ps1
+python .\scripts\propose_manifest.py --root $ROOT --out .\outputs\manifest_proposed.csv
+python .\scripts\validate_manifest.py --manifest .\outputs\manifest_proposed.csv --study-config .\configs\study_config.yaml --out-dir .\outputs\audit --skip-label-values
+python .\scripts\profile_dataset.py --manifest .\outputs\manifest_proposed.csv --study-config .\configs\study_config.yaml --out-dir .\outputs\profile
+python .\scripts\assign_folds.py --manifest .\outputs\manifest_proposed.csv --n-folds 5 --seed 3407 --out .\outputs\manifest_with_folds.csv
+python .\scripts\self_audit.py --manifest .\outputs\manifest_with_folds.csv --study-config .\configs\study_config.yaml --out-dir .\outputs\audit
 
-python scripts/evaluate_predictions.py --manifest outputs/manifest_with_folds.csv --pred-root outputs/predictions --out-csv outputs/results/per_case_metrics.csv
-python scripts/aggregate_results.py --metrics outputs/results/per_case_metrics.csv --audit outputs/audit/self_audit_summary.json --out-dir outputs/paper_assets
-python scripts/make_figures.py --paper-dir outputs/paper_assets
-python scripts/build_manuscript.py --paper-dir outputs/paper_assets --template manuscript/manuscript_template.md --out manuscript/manuscript_draft.md
+python .\scripts\generate_experiment_scripts.py `
+  --manifest .\outputs\manifest_with_folds.csv `
+  --study-config .\configs\study_config.yaml `
+  --nnunet-raw $NNUNET_RAW `
+  --nnunet-preprocessed $NNUNET_PREPROCESSED `
+  --audit-dir .\outputs\audit `
+  --out-dir .\outputs\experiments `
+  --manuscript-dir .\manuscript
+
+Write-Host ""
+Write-Host "Experiment scripts generated under outputs/experiments/<experiment_id>/suite_commands/"
+Write-Host "Recommended first runs:"
+Write-Host "  & .\outputs\experiments\A\suite_commands\run_A.ps1"
+Write-Host "  & .\outputs\experiments\M2\suite_commands\run_M2.ps1"

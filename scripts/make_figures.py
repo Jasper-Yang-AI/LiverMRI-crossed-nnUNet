@@ -7,6 +7,48 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
+def plot_heatmap(table: pd.DataFrame, out_path: Path, title: str) -> None:
+    if table.empty:
+        return
+    heat = table.pivot(index="source_seq", columns="target_seq", values="dice_mean")
+    plt.figure(figsize=(10, 4))
+    plt.imshow(heat.values, aspect="auto")
+    plt.xticks(range(len(heat.columns)), heat.columns, rotation=45, ha="right")
+    plt.yticks(range(len(heat.index)), heat.index)
+    plt.title(title)
+    plt.colorbar(label="Dice")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=200)
+    plt.close()
+
+
+def plot_source_bar(table: pd.DataFrame, out_path: Path, title: str) -> None:
+    if table.empty or "dice_mean" not in table.columns:
+        return
+    plt.figure(figsize=(6, 4))
+    plt.bar(table["source_seq"], table["dice_mean"])
+    plt.ylabel("Dice")
+    plt.title(title)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=200)
+    plt.close()
+
+
+def plot_target_bar(table: pd.DataFrame, out_path: Path, title: str) -> None:
+    if table.empty or "dice_mean" not in table.columns:
+        return
+    plt.figure(figsize=(10, 4))
+    for source_seq, sub in table.groupby("source_seq"):
+        plt.plot(sub["target_seq"], sub["dice_mean"], marker="o", label=source_seq)
+    plt.xticks(rotation=45, ha="right")
+    plt.ylabel("Dice")
+    plt.title(title)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=200)
+    plt.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate paper-ready figures from aggregated tables.")
     parser.add_argument("--paper-dir", required=True)
@@ -14,43 +56,22 @@ def main():
 
     paper_dir = Path(args.paper_dir)
 
-    # Fig 3 / Fig 4 based on Table 3
-    table3_path = paper_dir / "Table3_cross_sequence.csv"
+    table2_path = paper_dir / "Table2_internal_source_cv.csv"
+    table3_path = paper_dir / "Table3_internal_cross_sequence.csv"
+    table4_path = paper_dir / "Table4_external_test.csv"
+
+    if table2_path.exists():
+        plot_source_bar(pd.read_csv(table2_path), paper_dir / "Figure2_internal_source_cv.png", "Internal same-sequence CV")
+
     if table3_path.exists():
         table3 = pd.read_csv(table3_path)
+        plot_heatmap(table3, paper_dir / "Figure3_internal_cross_sequence_heatmap.png", "Internal cross-sequence transfer")
+        plot_target_bar(table3, paper_dir / "Figure3_internal_cross_sequence_lines.png", "Internal cross-sequence Dice")
 
-        # Figure 4: cross-sequence heatmap (Dice)
-        heat = table3.pivot(index="source_seq", columns="target_seq", values="dice_mean")
-        plt.figure(figsize=(10, 4))
-        plt.imshow(heat.values, aspect="auto")
-        plt.xticks(range(len(heat.columns)), heat.columns, rotation=45, ha="right")
-        plt.yticks(range(len(heat.index)), heat.index)
-        plt.colorbar(label="Dice")
-        plt.tight_layout()
-        plt.savefig(paper_dir / "Figure4_cross_sequence_heatmap.png", dpi=200)
-        plt.close()
-
-        # Figure 5-like line plot (Dice by target)
-        plt.figure(figsize=(10, 4))
-        for src, sub in table3.groupby("source_seq"):
-            plt.plot(sub["target_seq"], sub["dice_mean"], marker="o", label=src)
-        plt.xticks(rotation=45, ha="right")
-        plt.ylabel("Dice")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(paper_dir / "Figure3_source_target_dice.png", dpi=200)
-        plt.close()
-
-    table2_path = paper_dir / "Table2_main_source_cv.csv"
-    if table2_path.exists():
-        table2 = pd.read_csv(table2_path)
-        if "dice_mean" in table2.columns:
-            plt.figure(figsize=(5, 4))
-            plt.bar(table2["source_seq"], table2["dice_mean"])
-            plt.ylabel("Dice")
-            plt.tight_layout()
-            plt.savefig(paper_dir / "Figure2_main_source_bar.png", dpi=200)
-            plt.close()
+    if table4_path.exists():
+        table4 = pd.read_csv(table4_path)
+        plot_heatmap(table4, paper_dir / "Figure4_external_test_heatmap.png", "External zero-shot transfer")
+        plot_target_bar(table4, paper_dir / "Figure4_external_test_lines.png", "External zero-shot Dice")
 
     print(f"Saved figures to: {paper_dir}")
 

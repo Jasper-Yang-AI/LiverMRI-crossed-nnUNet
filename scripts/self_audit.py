@@ -19,13 +19,18 @@ def main():
     cfg = load_yaml(args.study_config)
     out_dir = ensure_dir(args.out_dir)
     df = pd.read_csv(args.manifest)
+    if "subset" not in df.columns:
+        df["subset"] = "train"
+    if "cohort_role" not in df.columns:
+        df["cohort_role"] = "internal_cv"
 
     findings = []
     status = "pass"
 
     # leakage
     if "fold" in df.columns:
-        p_fold_counts = df.groupby("patient_id")["fold"].nunique()
+        internal = df[df["cohort_role"] == "internal_cv"].copy()
+        p_fold_counts = internal.groupby("patient_id")["fold"].nunique() if not internal.empty else pd.Series(dtype=int)
         leaked = p_fold_counts[p_fold_counts > 1]
         if len(leaked) > 0:
             findings.append({"level": "error", "item": "patient_leakage", "count": int(len(leaked))})
@@ -57,6 +62,8 @@ def main():
         "status": status,
         "n_rows": int(df.shape[0]),
         "n_patients": int(df["patient_id"].nunique()),
+        "subset_counts": df["subset"].fillna("UNKNOWN").value_counts().to_dict(),
+        "cohort_counts": df["cohort_role"].fillna("UNKNOWN").value_counts().to_dict(),
         "sequence_counts": seq_counts,
         "findings": findings,
     }

@@ -37,7 +37,7 @@ def main():
             "A patient-level retrospective pipeline was established with sequence normalization, source-sequence 5-fold nnUNetv2 training, zero-shot cross-sequence evaluation, and optional few-shot adaptation."
         ),
         abstract_results=(
-            f"A total of {summary.get('n_total_evals', 'N/A')} target evaluations were summarized across sources {summary.get('sources', [])} and targets {summary.get('targets', [])}."
+            f"A total of {summary.get('n_total_evals', 'N/A')} target evaluations were summarized, including {summary.get('n_internal_cv_evals', 'N/A')} internal CV evaluations and {summary.get('n_external_test_evals', 'N/A')} external test evaluations."
         ),
         abstract_conclusion=(
             "The source-sequence strategy provides a practical evaluation framework for studying transferability and domain shift in real-world heterogeneous liver MRI."
@@ -52,7 +52,7 @@ def main():
             "objective lesion-level evaluation, and an explicit self-audit of data leakage, sequence ambiguity, and confounding risks."
         ),
         results=(
-            "Main source-sequence results, cross-sequence transfer matrices, and adaptation gains should be inserted from the generated tables and figures in outputs/paper_assets."
+            "Main internal same-sequence CV results, internal cross-sequence transfer matrices, external zero-shot transfer results, and adaptation gains should be inserted from the generated tables and figures in outputs/paper_assets."
         ),
         discussion=(
             "The discussion should interpret why source-to-similar plain transfer may outperform source-to-enhanced transfer, quantify domain shift, and acknowledge limitations such as retrospective design, potential vendor entanglement, and sequence-definition ambiguity."

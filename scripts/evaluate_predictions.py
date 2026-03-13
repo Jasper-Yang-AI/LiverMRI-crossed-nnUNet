@@ -7,15 +7,17 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 from scipy import ndimage
-from scipy.spatial.distance import directed_hausdorff
+from scipy.spatial import cKDTree
 from tqdm import tqdm
 
-from common import connected_components_3d
+from common import extract_case_stem, make_case_id
 
 
-def load_binary(path: Path) -> np.ndarray:
-    arr = nib.load(str(path)).get_fdata()
-    return (arr > 0).astype(np.uint8)
+def load_binary_and_spacing(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    image = nib.load(str(path))
+    array = image.get_fdata()
+    spacing = np.asarray(image.header.get_zooms()[:3], dtype=float)
+    return (array > 0).astype(np.uint8), spacing
 
 
 def dice_score(gt: np.ndarray, pred: np.ndarray) -> float:
@@ -24,24 +26,22 @@ def dice_score(gt: np.ndarray, pred: np.ndarray) -> float:
     return 1.0 if denom == 0 else float((2.0 * inter) / denom)
 
 
-def surface_points(binary: np.ndarray) -> np.ndarray:
+def surface_points(binary: np.ndarray, spacing: np.ndarray) -> np.ndarray:
     if binary.sum() == 0:
-        return np.zeros((0, 3))
+        return np.zeros((0, 3), dtype=float)
     eroded = ndimage.binary_erosion(binary, iterations=1, border_value=0)
     surface = binary ^ eroded
-    return np.argwhere(surface > 0)
+    return np.argwhere(surface > 0).astype(float) * spacing
 
 
-def hd95(gt: np.ndarray, pred: np.ndarray) -> float:
-    gt_pts = surface_points(gt)
-    pred_pts = surface_points(pred)
+def hd95(gt: np.ndarray, pred: np.ndarray, gt_spacing: np.ndarray, pred_spacing: np.ndarray) -> float:
+    gt_pts = surface_points(gt, gt_spacing)
+    pred_pts = surface_points(pred, pred_spacing)
     if gt_pts.shape[0] == 0 and pred_pts.shape[0] == 0:
         return 0.0
     if gt_pts.shape[0] == 0 or pred_pts.shape[0] == 0:
         return float("inf")
 
-    # Approximate HD95 with pairwise nearest distances
-    from scipy.spatial import cKDTree
     tree_gt = cKDTree(gt_pts)
     tree_pred = cKDTree(pred_pts)
     d_pred_to_gt, _ = tree_gt.query(pred_pts, k=1)
@@ -50,97 +50,129 @@ def hd95(gt: np.ndarray, pred: np.ndarray) -> float:
     return float(np.percentile(distances, 95))
 
 
-def lesion_detection_metrics(gt: np.ndarray, pred: np.ndarray):
+def connected_components_3d(binary_array: np.ndarray) -> tuple[np.ndarray, int]:
+    labeled, num = ndimage.label(binary_array)
+    return labeled, num
+
+
+def lesion_detection_metrics(gt: np.ndarray, pred: np.ndarray) -> tuple[float, float, float]:
     gt_cc, gt_n = connected_components_3d(gt)
     pred_cc, pred_n = connected_components_3d(pred)
 
     matched_gt = set()
     matched_pred = set()
 
-    for gi in range(1, gt_n + 1):
-        gmask = gt_cc == gi
-        for pi in range(1, pred_n + 1):
-            pmask = pred_cc == pi
-            if np.logical_and(gmask, pmask).any():
-                matched_gt.add(gi)
-                matched_pred.add(pi)
+    for gt_idx in range(1, gt_n + 1):
+        gt_mask = gt_cc == gt_idx
+        for pred_idx in range(1, pred_n + 1):
+            pred_mask = pred_cc == pred_idx
+            if np.logical_and(gt_mask, pred_mask).any():
+                matched_gt.add(gt_idx)
+                matched_pred.add(pred_idx)
 
     recall = 1.0 if gt_n == 0 else len(matched_gt) / gt_n
     precision = 1.0 if pred_n == 0 else len(matched_pred) / pred_n
-    if recall + precision == 0:
-        f1 = 0.0
-    else:
-        f1 = 2 * recall * precision / (recall + precision)
+    f1 = 0.0 if recall + precision == 0 else 2 * recall * precision / (recall + precision)
     return float(recall), float(precision), float(f1)
 
 
 def volume_relative_error(gt: np.ndarray, pred: np.ndarray) -> float:
-    g = gt.sum()
-    p = pred.sum()
-    return 0.0 if g == 0 else float(abs(p - g) / g)
+    gt_volume = gt.sum()
+    pred_volume = pred.sum()
+    return 0.0 if gt_volume == 0 else float(abs(pred_volume - gt_volume) / gt_volume)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Evaluate prediction folders against target labels.")
-    parser.add_argument("--manifest", required=True)
-    parser.add_argument("--pred-root", required=True)
-    parser.add_argument("--out-csv", required=True)
-    args = parser.parse_args()
-
-    manifest = pd.read_csv(args.manifest)
-    pred_root = Path(args.pred_root)
-
+def legacy_evaluation_manifest(manifest_path: Path, pred_root: Path) -> pd.DataFrame:
+    manifest = pd.read_csv(manifest_path)
     rows = []
     for pred_dir in sorted(pred_root.glob("*")):
-        if not pred_dir.is_dir():
+        if not pred_dir.is_dir() or "_to_" not in pred_dir.name:
             continue
-        if "_to_" not in pred_dir.name:
-            continue
-
         source_seq, target_seq = pred_dir.name.split("_to_", 1)
         target_rows = manifest[manifest["seq_group"] == target_seq].copy()
 
-        for row_idx, row in tqdm(target_rows.iterrows(), total=target_rows.shape[0], desc=pred_dir.name):
-            patient_id = row["patient_id"]
-            safe_patient = str(patient_id).replace(" ", "_")
-            safe_seq = str(target_seq).replace("+", "PLUS").replace("-", "")
-            case_id = f"{safe_patient}__{safe_seq}__{row_idx:05d}"
-
-            pred_path = pred_dir / f"{case_id}.nii.gz"
-            gt_path = Path(row["label_path"])
-            if not pred_path.exists() or not gt_path.exists():
-                rows.append(
-                    {
-                        "source_seq": source_seq,
-                        "target_seq": target_seq,
-                        "patient_id": patient_id,
-                        "fold": row.get("fold", -1),
-                        "case_id": case_id,
-                        "missing_prediction": 1,
-                    }
-                )
-                continue
-
-            gt = load_binary(gt_path)
-            pred = load_binary(pred_path)
-            rec, prec, f1 = lesion_detection_metrics(gt, pred)
-
+        for _, row in target_rows.iterrows():
+            case_stem = str(row["case_stem"]) if "case_stem" in row and pd.notna(row["case_stem"]) else extract_case_stem(row["image_path"])
+            case_id = make_case_id(case_stem)
             rows.append(
                 {
+                    "eval_mode": "legacy",
                     "source_seq": source_seq,
                     "target_seq": target_seq,
-                    "patient_id": patient_id,
                     "fold": row.get("fold", -1),
+                    "subset": row.get("subset", ""),
+                    "cohort_role": row.get("cohort_role", ""),
+                    "patient_id": row["patient_id"],
+                    "seq_raw": row["seq_raw"],
+                    "seq_group": row["seq_group"],
+                    "case_stem": case_stem,
                     "case_id": case_id,
-                    "missing_prediction": 0,
-                    "dice": dice_score(gt, pred),
-                    "hd95": hd95(gt, pred),
-                    "lesion_recall": rec,
-                    "lesion_precision": prec,
-                    "lesion_f1": f1,
-                    "volume_relative_error": volume_relative_error(gt, pred),
+                    "image_path": row["image_path"],
+                    "label_path": row["label_path"],
+                    "prediction_path": str(pred_dir / f"{case_id}.nii.gz"),
                 }
             )
+    return pd.DataFrame(rows)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Evaluate prediction folders against labels.")
+    parser.add_argument("--evaluation-manifest", default=None, help="Preferred: CSV generated by export_target_test_sets.py")
+    parser.add_argument("--manifest", default=None, help="Legacy manifest input")
+    parser.add_argument("--pred-root", default=None, help="Legacy prediction root")
+    parser.add_argument("--out-csv", required=True)
+    args = parser.parse_args()
+
+    if args.evaluation_manifest:
+        eval_manifest = pd.read_csv(args.evaluation_manifest)
+    elif args.manifest and args.pred_root:
+        eval_manifest = legacy_evaluation_manifest(Path(args.manifest), Path(args.pred_root))
+    else:
+        raise ValueError("Provide `--evaluation-manifest` or legacy `--manifest` + `--pred-root`.")
+
+    rows = []
+    iterator = eval_manifest.to_dict(orient="records")
+    for row in tqdm(iterator, total=len(iterator), desc="evaluating"):
+        prediction_path = Path(row["prediction_path"])
+        gt_path = Path(row["label_path"])
+
+        base_row = {
+            "eval_mode": row.get("eval_mode", "unknown"),
+            "source_seq": row["source_seq"],
+            "source_primary_target": row.get("source_primary_target", ""),
+            "target_seq": row["target_seq"],
+            "raw_seq_group": row.get("raw_seq_group", row.get("seq_group", "")),
+            "patient_id": row["patient_id"],
+            "fold": row.get("fold", -1),
+            "subset": row.get("subset", ""),
+            "cohort_role": row.get("cohort_role", ""),
+            "case_id": row["case_id"],
+            "case_stem": row.get("case_stem", ""),
+            "prediction_path": str(prediction_path),
+            "label_path": str(gt_path),
+        }
+
+        if not prediction_path.exists() or not gt_path.exists():
+            base_row["missing_prediction"] = 1
+            rows.append(base_row)
+            continue
+
+        gt, gt_spacing = load_binary_and_spacing(gt_path)
+        pred, pred_spacing = load_binary_and_spacing(prediction_path)
+        recall, precision, f1 = lesion_detection_metrics(gt, pred)
+
+        rows.append(
+            {
+                **base_row,
+                "missing_prediction": 0,
+                "dice": dice_score(gt, pred),
+                "hd95": hd95(gt, pred, gt_spacing, pred_spacing),
+                "lesion_recall": recall,
+                "lesion_precision": precision,
+                "lesion_f1": f1,
+                "volume_relative_error": volume_relative_error(gt, pred),
+            }
+        )
 
     out_csv = Path(args.out_csv)
     out_csv.parent.mkdir(parents=True, exist_ok=True)

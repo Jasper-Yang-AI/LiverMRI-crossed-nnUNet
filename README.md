@@ -1,224 +1,268 @@
 # LiverMRI-CrossSeq-nnUNetv2
 
-A publication-oriented, patient-level, cross-sequence nnUNetv2 pipeline for **real-world heterogeneous liver MRI tumor segmentation**.
+面向 liver MRI 多序列稳健性研究的 nnUNetv2 工程。
 
-This repository is designed for the study pattern discussed in the planning phase:
+这版工程已经按你的实验设计重构为“组别驱动 + 实验编号驱动”：
 
-1. **Choose one dominant source sequence** as the main training domain (default: `T2`).
-2. **Train nnUNetv2 with strict patient-level 5-fold CV** on the source sequence only.
-3. **Evaluate zero-shot cross-sequence generalization** on other plain and enhanced MRI sequences.
-4. **Optionally perform few-shot target-domain adaptation** on 1–2 important enhanced target sequences.
-5. **Automatically aggregate metrics, generate paper-ready tables/figures, and draft a manuscript skeleton**.
+- 组别：`P1 / P2 / P3 / P456 / E_all`
+- 实验：`A / M1 / M2 / M3 / U1 / U2 / U3 / U4`
 
-## Default study framing
+主配置见 [study_config.yaml](/d:/livermri_crossseq_nnunetv2/LiverMRI-CrossSeq-nnUNetv2/configs/study_config.yaml)。
 
-### Task
-- Main task: **liver tumor segmentation**
-- Default label map:
-  - `0`: background
-  - `1`: tumor
+## 分组定义
 
-> If your labels contain both liver and tumor, edit `configs/study_config.yaml` and `configs/label_map.yaml`.
+- `P1 = T2 + T2WI`
+- `P2 = DWI`
+- `P3 = ADC`
+- `P456 = T1 + InPhase + OutPhase + C-pre`
+- `E_all = ARTERIAL + PORTAL + DELAY`
 
-### Default sequence normalization
-- Plain: `T2`, `T2WI`, `DWI`, `ADC`, `T1`, `InPhase`, `OutPhase`, `C-pre`
-- Enhanced:
-  - Arterial: `C+A`, `AP`
-  - Portal venous: `C+V`, `VP`
-  - Delayed / hepatobiliary-like delayed bucket: `C+Delay`, `HP`
+说明：
 
-## Recommended minimal publishable experiment
+- `T2` 和 `T2WI` 被视为同一主平扫序列家族
+- `P456` 是其余 plain MRI 的合并组
+- 如果你要改分组，只改 [study_config.yaml](/d:/livermri_crossseq_nnunetv2/LiverMRI-CrossSeq-nnUNetv2/configs/study_config.yaml) 即可
 
-### Module A — Cohort audit
-- Normalize sequence naming
-- Build a reviewed manifest
-- Check label integrity, patient leakage, fold balance, and optional vendor imbalance
+## 实验矩阵
 
-### Module B — Main source-sequence baseline
-- Source sequence: **T2**
-- Patient-level 5-fold CV
-- Model: **nnUNetv2 3d_fullres**
-- Metrics:
-  - Dice
-  - HD95
-  - Lesion recall
-  - Lesion precision
-  - Lesion F1
-  - Volume relative error (optional)
+- `A`: 训练 `P1`，测试 `P1 / P2 / P3 / P456 / E_all`
+- `M1`: 训练 `P1 + P2 + P3`
+- `M2`: 训练 `P1 + P2 + P3 + P456`
+  这就是 `All-Plain`
+- `M3`: 训练 `M2 + E_all`
+  这就是 `All-Seq`
+- `U1`: 训练 `P2-only`
+- `U2`: 训练 `P3-only`
+- `U3`: 训练 `P456-only`
+- `U4`: 训练 `E_all-only`
 
-### Module C — Zero-shot cross-sequence generalization
-Apply the T2-trained model directly to:
-- `T2WI`
-- `DWI`
-- `ADC`
-- `C-pre`
-- `ARTERIAL` (`C+A/AP`)
-- `PORTAL` (`C+V/VP`)
-- `DELAY` (`C+Delay/HP`)
-- optional exploratory targets: `T1`, `InPhase`, `OutPhase`
+默认所有实验都测试：
 
-### Module D — Few-shot adaptation (optional but recommended)
-Pick 1–2 clinically important target sequences:
-- recommended: `PORTAL` and/or `ARTERIAL`
+- `P1`
+- `P2`
+- `P3`
+- `P456`
+- `E_all`
 
-Compare:
-- zero-shot transfer
-- few-shot fine-tuning with small target-domain subsets (e.g. 10%, 20%)
+## 当前数据上的重要事实
 
-## Repository layout
+基于你现在的数据统计：
 
-```text
-LiverMRI-CrossSeq-nnUNetv2/
-├── configs/
-├── docs/
-├── manuscript/
-├── outputs/
-├── scripts/
-├── templates/
-├── run_full_study.ps1
-├── run_full_study.sh
-└── requirements.txt
-```
+- `P1` 在 `train/test` 都有
+- `P2` 在 `train/test` 都有
+- `P3=ADC` 只在 `train` 有，外部 `test` 没有
+- `P456` 和 `E_all` 在 `train/test` 都有
 
-## Quick start
+所以：
 
-### 1. Create environment
+- `P3` 只能做内部 CV，不能做外部测试
+- 外部 `P1` 实际主要来自 `T2WI`
 
-```bash
-conda create -n liver_crossseq python=3.10 -y
-conda activate liver_crossseq
+这些是数据决定的，不是脚本缺了什么。
+
+## 环境准备
+
+你不需要 clone `nnUNet` 源码。  
+本机 `conda` 环境 `nnu` 已经装好了 `nnunetv2`。
+
+进入环境：
+
+```powershell
+conda activate nnu
+cd D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2
 pip install -r requirements.txt
 ```
 
-Install nnUNetv2 as needed in your environment.
+设置 nnUNet 路径：
 
-### 2. Propose and review a manifest
+```powershell
+$env:nnUNet_raw="D:\nnUNet_raw"
+$env:nnUNet_preprocessed="D:\nnUNet_preprocessed"
+$env:nnUNet_results="D:\nnUNet_results"
 
-```bash
-python scripts/propose_manifest.py \
-  --root "D:\Dataset003_v2_LiverTumorSeg" \
-  --out outputs/manifest_proposed.csv
+New-Item -ItemType Directory -Force -Path $env:nnUNet_raw | Out-Null
+New-Item -ItemType Directory -Force -Path $env:nnUNet_preprocessed | Out-Null
+New-Item -ItemType Directory -Force -Path $env:nnUNet_results | Out-Null
 ```
 
-Then manually review:
-- `patient_id`
-- `seq_raw`
-- `seq_group`
-- `image_path`
-- `label_path`
-- optional `vendor`, `field_strength`
+## 公共准备步骤
 
-### 3. Validate manifest
+这些步骤所有实验只做一次。
 
-```bash
-python scripts/validate_manifest.py \
-  --manifest outputs/manifest_reviewed.csv \
-  --study-config configs/study_config.yaml \
+```powershell
+python scripts/propose_manifest.py `
+  --root "D:\Dataset003_v2_LiverTumorSeg" `
+  --out outputs/manifest_proposed.csv
+
+python scripts/validate_manifest.py `
+  --manifest outputs/manifest_proposed.csv `
+  --study-config configs/study_config.yaml `
+  --out-dir outputs/audit `
+  --skip-label-values
+
+python scripts/profile_dataset.py `
+  --manifest outputs/manifest_proposed.csv `
+  --study-config configs/study_config.yaml `
+  --out-dir outputs/profile
+
+python scripts/assign_folds.py `
+  --manifest outputs/manifest_proposed.csv `
+  --n-folds 5 `
+  --seed 3407 `
+  --out outputs/manifest_with_folds.csv
+
+python scripts/self_audit.py `
+  --manifest outputs/manifest_with_folds.csv `
+  --study-config configs/study_config.yaml `
   --out-dir outputs/audit
 ```
 
-### 4. Create patient-level folds
+关键输出：
 
-```bash
-python scripts/assign_folds.py \
-  --manifest outputs/manifest_reviewed.csv \
-  --n-folds 5 \
-  --seed 3407 \
-  --out outputs/manifest_with_folds.csv
+- `outputs/manifest_with_folds.csv`
+- `outputs/profile/DATASET_PROFILE.md`
+- `outputs/profile/experiment_catalog.csv`
+
+## 推荐入口
+
+先运行顶层入口：
+
+```powershell
+.\run_full_study.ps1
 ```
 
-### 5. Export source dataset for nnUNetv2
+这个脚本会：
 
-```bash
-python scripts/export_nnunet_source_dataset.py \
-  --manifest outputs/manifest_with_folds.csv \
-  --study-config configs/study_config.yaml \
-  --dataset-id 301 \
-  --seq-group T2 \
+1. 跑公共准备步骤
+2. 自动生成每个实验的独立脚本
+
+生成位置：
+
+- `outputs/experiments/A/suite_commands/run_A.ps1`
+- `outputs/experiments/M1/suite_commands/run_M1.ps1`
+- `outputs/experiments/M2/suite_commands/run_M2.ps1`
+- `outputs/experiments/M3/suite_commands/run_M3.ps1`
+- `outputs/experiments/U1/suite_commands/run_U1.ps1`
+- `outputs/experiments/U2/suite_commands/run_U2.ps1`
+- `outputs/experiments/U3/suite_commands/run_U3.ps1`
+- `outputs/experiments/U4/suite_commands/run_U4.ps1`
+
+## 全部实验与优先级
+
+这个工程支持的是完整 8 个实验，不是 3 个实验。
+
+### 全部实验
+
+- `A`: `P1 -> P1 / P2 / P3 / P456 / E_all`
+- `M1`: `P1 + P2 + P3 -> P1 / P2 / P3 / P456 / E_all`
+- `M2`: `P1 + P2 + P3 + P456 -> P1 / P2 / P3 / P456 / E_all`
+- `M3`: `All-Plain + E_all -> P1 / P2 / P3 / P456 / E_all`
+- `U1`: `P2-only -> P1 / P2 / P3 / P456 / E_all`
+- `U2`: `P3-only -> P1 / P2 / P3 / P456 / E_all`
+- `U3`: `P456-only -> P1 / P2 / P3 / P456 / E_all`
+- `U4`: `E_all-only -> P1 / P2 / P3 / P456 / E_all`
+
+### 为什么前面只重点提了 3 个
+
+前面那一节说的不是“只跑 3 个”，而是“建议优先跑的 3 个核心实验”：
+
+- `A`
+  作为 `P1-only` 基线
+- `M2`
+  作为 `All-Plain` 主实验
+- `M3`
+  作为 `All-Seq` 上界实验
+
+这 3 个最容易先形成论文主线。
+
+### 完整推荐顺序
+
+如果你要按完整设计跑，建议顺序是：
+
+1. `A`
+2. `M1`
+3. `M2`
+4. `M3`
+5. `U1`
+6. `U2`
+7. `U3`
+8. `U4`
+
+其中：
+
+- `A / M1 / M2 / M3` 是主线实验
+- `U1 / U2 / U3 / U4` 更像补充对照和 ablation
+
+## 手动单独跑某个实验
+
+以 `A` 为例：
+
+```powershell
+python scripts/export_nnunet_source_dataset.py `
+  --manifest outputs/manifest_with_folds.csv `
+  --study-config configs/study_config.yaml `
+  --experiment-id A `
   --nnunet-raw "D:\nnUNet_raw"
-```
 
-### 6. Generate `splits_final.json`
-
-```bash
-python scripts/generate_splits_json.py \
-  --manifest outputs/manifest_with_folds.csv \
-  --seq-group T2 \
-  --dataset-id 301 \
+python scripts/generate_splits_json.py `
+  --manifest outputs/manifest_with_folds.csv `
+  --study-config configs/study_config.yaml `
+  --experiment-id A `
   --nnunet-preprocessed "D:\nnUNet_preprocessed"
+
+nnUNetv2_plan_and_preprocess -d 311 --verify_dataset_integrity
+nnUNetv2_train 311 3d_fullres 0
+nnUNetv2_train 311 3d_fullres 1
+nnUNetv2_train 311 3d_fullres 2
+nnUNetv2_train 311 3d_fullres 3
+nnUNetv2_train 311 3d_fullres 4
+
+python scripts/export_target_test_sets.py `
+  --manifest outputs/manifest_with_folds.csv `
+  --study-config configs/study_config.yaml `
+  --experiment-id A `
+  --out-dir outputs/experiments/A/targets
+
+.\outputs\experiments\A\commands\infer_internal_cv.ps1
+.\outputs\experiments\A\commands\infer_external_test.ps1
+
+python scripts/evaluate_predictions.py `
+  --evaluation-manifest outputs/experiments/A/evaluation_manifest.csv `
+  --out-csv outputs/experiments/A/results/per_case_metrics.csv
+
+python scripts/aggregate_results.py `
+  --metrics outputs/experiments/A/results/per_case_metrics.csv `
+  --audit outputs/audit/self_audit_summary.json `
+  --out-dir outputs/experiments/A/paper_assets
 ```
 
-### 7. Run nnUNetv2 training
+`M2` 也是同样用法，只要把 `A` 换成 `M2`，`dataset_id` 会自动从配置里读取。
 
-```bash
-nnUNetv2_plan_and_preprocess -d 301 --verify_dataset_integrity
-nnUNetv2_train 301 3d_fullres 0
-nnUNetv2_train 301 3d_fullres 1
-nnUNetv2_train 301 3d_fullres 2
-nnUNetv2_train 301 3d_fullres 3
-nnUNetv2_train 301 3d_fullres 4
-```
+## 结果看哪里
 
-### 8. Export target test sets and run cross-sequence inference
+以 `A` 为例：
 
-```bash
-python scripts/export_target_test_sets.py \
-  --manifest outputs/manifest_with_folds.csv \
-  --study-config configs/study_config.yaml \
-  --source-seq T2 \
-  --targets T2WI DWI ADC C-pre ARTERIAL PORTAL DELAY \
-  --out-dir outputs/targets
-```
+- `outputs/experiments/A/evaluation_manifest.csv`
+- `outputs/experiments/A/results/per_case_metrics.csv`
+- `outputs/experiments/A/paper_assets/Table2_internal_source_cv.csv`
+- `outputs/experiments/A/paper_assets/Table3_internal_cross_sequence.csv`
+- `outputs/experiments/A/paper_assets/Table4_external_test.csv`
+- `outputs/experiments/A/paper_assets/Table_bundle_raw_breakdown.csv`
 
-Then run the generated command file:
-- `outputs/commands/infer_targets.ps1`
-- `outputs/commands/infer_targets.sh`
+其中：
 
-### 9. Evaluate and aggregate results
+- `Table2`：同域结果
+- `Table3`：内部跨组结果
+- `Table4`：外部测试结果
+- `Table_bundle_raw_breakdown`：组内原始序列拆解
 
-```bash
-python scripts/evaluate_predictions.py \
-  --manifest outputs/manifest_with_folds.csv \
-  --pred-root outputs/predictions \
-  --out-csv outputs/results/per_case_metrics.csv
+## 最重要的原则
 
-python scripts/aggregate_results.py \
-  --metrics outputs/results/per_case_metrics.csv \
-  --audit outputs/audit/self_audit_summary.json \
-  --out-dir outputs/paper_assets
-```
+内部评估不能直接用 `-f 0 1 2 3 4` ensemble。
 
-### 10. Generate figures and manuscript draft
+原因是你的数据是同病人多序列结构，如果内部评估用 fold ensemble，会发生 patient leakage，结果虚高。
 
-```bash
-python scripts/make_figures.py \
-  --paper-dir outputs/paper_assets
+当前工程已经固定为：
 
-python scripts/build_manuscript.py \
-  --paper-dir outputs/paper_assets \
-  --template manuscript/manuscript_template.md \
-  --out manuscript/manuscript_draft.md
-```
-
-## What this repo already solves
-- strict **patient-level** folds
-- configurable sequence normalization
-- zero-shot source→target evaluation design
-- few-shot adaptation data splits
-- lesion-level metrics
-- auto-generated paper tables / figures
-- objective self-audit report
-
-## What still depends on your local machine / data
-- real data manifest review
-- actual nnUNetv2 training and inference
-- optional vendor metadata filling
-- final figure polishing for publication
-
-## Suggested paper title
-**Cross-sequence generalization of nnUNetv2 for real-world heterogeneous liver MRI tumor segmentation: a patient-level retrospective study**
-
-## Suggested paper innovation statement
-1. A source-sequence-based evaluation framework for real-world heterogeneous liver MRI tumor segmentation.
-2. Systematic comparison of zero-shot generalization from a dominant plain MRI source to heterogeneous plain and enhanced target sequences.
-3. Objective quantification of transferability, domain shift, few-shot adaptation gain, and practical limitations under strict patient-level partitioning.
+- 内部评估：fold 对应 fold 模型
+- 外部评估：完全未见 `test` 才允许 `0 1 2 3 4` ensemble

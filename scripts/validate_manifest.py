@@ -16,6 +16,8 @@ def main():
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--study-config", default="configs/study_config.yaml")
     parser.add_argument("--out-dir", required=True)
+    parser.add_argument("--max-rows", type=int, default=None, help="Optional row cap for quick smoke-checks")
+    parser.add_argument("--skip-label-values", action="store_true", help="Skip reading full label arrays for faster validation")
     args = parser.parse_args()
 
     out_dir = ensure_dir(args.out_dir)
@@ -24,6 +26,10 @@ def main():
     expected_labels = set(cfg["labels"].values())
 
     df = pd.read_csv(args.manifest)
+    if args.max_rows is not None:
+        df = df.head(args.max_rows).copy()
+    if "subset" not in df.columns:
+        df["subset"] = "train"
 
     required_cols = ["patient_id", "seq_raw", "image_path", "label_path"]
     missing_cols = [c for c in required_cols if c not in df.columns]
@@ -54,12 +60,26 @@ def main():
 
         if cfg["self_audit"].get("check_label_values", True):
             try:
-                lab = nib.load(str(label_path)).get_fdata()
-                uniq = set(np.unique(lab).astype(int).tolist())
-                if not uniq.issubset(expected_labels):
+                img_obj = nib.load(str(image_path))
+                lab_obj = nib.load(str(label_path))
+                if img_obj.shape != lab_obj.shape:
                     issues.append(
-                        {"row": idx, "issue": "unexpected_label_values", "values": sorted(list(uniq)), "path": str(label_path)}
+                        {
+                            "row": idx,
+                            "issue": "shape_mismatch",
+                            "image_shape": list(img_obj.shape),
+                            "label_shape": list(lab_obj.shape),
+                            "image_path": str(image_path),
+                            "label_path": str(label_path),
+                        }
                     )
+                if not args.skip_label_values:
+                    lab = lab_obj.get_fdata()
+                    uniq = set(np.unique(lab).astype(int).tolist())
+                    if not uniq.issubset(expected_labels):
+                        issues.append(
+                            {"row": idx, "issue": "unexpected_label_values", "values": sorted(list(uniq)), "path": str(label_path)}
+                        )
             except Exception as e:
                 issues.append({"row": idx, "issue": "label_read_error", "error": str(e), "path": str(label_path)})
 
@@ -74,9 +94,12 @@ def main():
     summary = {
         "n_rows": int(df.shape[0]),
         "n_patients": int(df["patient_id"].nunique()),
+        "subset_counts": df["subset"].fillna("UNKNOWN").value_counts().to_dict(),
         "sequence_counts": df["seq_group"].fillna("UNKNOWN").value_counts().to_dict(),
         "missing_vendor_rate": float((df["vendor"].isna() | (df["vendor"].astype(str).str.len() == 0)).mean()) if "vendor" in df.columns else 1.0,
         "n_issues": len(issues),
+        "max_rows": args.max_rows,
+        "skip_label_values": bool(args.skip_label_values),
     }
 
     df.to_csv(out_dir / "manifest_validated.csv", index=False, encoding="utf-8-sig")
