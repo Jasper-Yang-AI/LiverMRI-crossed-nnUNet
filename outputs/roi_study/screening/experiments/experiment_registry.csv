@@ -1,0 +1,11 @@
+﻿experiment_id,dataset_id,source_tag,primary_target,description,script_ps1
+RS01,401,T2_MAIN,T2_MAIN,ROI-constrained single-sequence screening using T2/T2WI family,D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\outputs\roi_study\screening\experiments\RS01\suite_commands\run_RS01.ps1
+RS02,402,DWI,DWI,ROI-constrained single-sequence screening using DWI,D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\outputs\roi_study\screening\experiments\RS02\suite_commands\run_RS02.ps1
+RS03,403,ADC,ADC,ROI-constrained single-sequence screening using ADC,D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\outputs\roi_study\screening\experiments\RS03\suite_commands\run_RS03.ps1
+RS04,404,T1,T1,ROI-constrained single-sequence screening using T1,D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\outputs\roi_study\screening\experiments\RS04\suite_commands\run_RS04.ps1
+RS05,405,InPhase,InPhase,ROI-constrained single-sequence screening using InPhase,D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\outputs\roi_study\screening\experiments\RS05\suite_commands\run_RS05.ps1
+RS06,406,OutPhase,OutPhase,ROI-constrained single-sequence screening using OutPhase,D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\outputs\roi_study\screening\experiments\RS06\suite_commands\run_RS06.ps1
+RS07,407,C-pre,C-pre,ROI-constrained single-sequence screening using C-pre,D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\outputs\roi_study\screening\experiments\RS07\suite_commands\run_RS07.ps1
+RS08,408,ARTERIAL,ARTERIAL,ROI-constrained single-sequence screening using ARTERIAL,D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\outputs\roi_study\screening\experiments\RS08\suite_commands\run_RS08.ps1
+RS09,409,PORTAL,PORTAL,ROI-constrained single-sequence screening using PORTAL,D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\outputs\roi_study\screening\experiments\RS09\suite_commands\run_RS09.ps1
+RS10,410,DELAY,DELAY,ROI-constrained single-sequence screening using DELAY,D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\outputs\roi_study\screening\experiments\RS10\suite_commands\run_RS10.ps1

@@ -39,4 +39,3 @@ outputs/**
 !outputs/**/*.yml
 !outputs/**/*.txt
 !outputs/**/*.ps1
-!outputs/**/*.sh

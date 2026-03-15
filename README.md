@@ -1,252 +1,167 @@
 # LiverMRI-CrossSeq-nnUNetv2
 
-面向 liver MRI 多序列稳健性研究的 nnUNetv2 工程。
+用于 liver MRI 肿瘤分割实验的 `nnUNetv2` 工程。
 
-这版工程已经按你的实验设计重构为“组别驱动 + 实验编号驱动”：
+当前工程已经切换到新的主线设计：
 
-- 组别：`P1 / P2 / P3 / P456 / E_all`
-- 实验：`A / M1 / M2 / M3 / U1 / U2 / U3 / U4`
+1. `TotalSegmentator` 做 whole-liver ROI
+2. 在 liver ROI 约束下完成所有单序列 `nnUNetv2 3d_fullres` 筛选
+3. 比较各序列指标，选择后续配准的 anchor sequence
+4. 为配准实验生成 patient-wise job manifest
+5. 等配准方法确定后，再做配准后 ROI crop 训练与推理后肝外抑制
 
-主配置见 [study_config.yaml](/d:/livermri_crossseq_nnunetv2/LiverMRI-CrossSeq-nnUNetv2/configs/study_config.yaml)。
+默认数据集：
 
-## 分组定义
+```text
+D:\Dataset003_v2_LiverTumorSeg
+```
 
-- `P1 = T2 + T2WI`
-- `P2 = DWI`
-- `P3 = ADC`
-- `P456 = T1 + InPhase + OutPhase + C-pre`
-- `E_all = ARTERIAL + PORTAL + DELAY`
+## 1. 当前推荐主线
 
-说明：
+当前最推荐使用的是 ROI + registration oriented workflow：
 
-- `T2` 和 `T2WI` 被视为同一主平扫序列家族
-- `P456` 是其余 plain MRI 的合并组
-- 如果你要改分组，只改 [study_config.yaml](/d:/livermri_crossseq_nnunetv2/LiverMRI-CrossSeq-nnUNetv2/configs/study_config.yaml) 即可
+- 入口脚本：`run_roi_screening_study.ps1`
+- 配置文件：`configs/roi_study_config.yaml`
+- 详细中文说明：`docs/ROI_REGISTRATION_STUDY_CN.md`
 
-## 实验矩阵
+如果你现在是要做新的 whole-liver ROI、单序列筛选和后续配准实验，就直接从这条主线开始。
 
-- `A`: 训练 `P1`，测试 `P1 / P2 / P3 / P456 / E_all`
-- `M1`: 训练 `P1 + P2 + P3`
-- `M2`: 训练 `P1 + P2 + P3 + P456`
-  这就是 `All-Plain`
-- `M3`: 训练 `M2 + E_all`
-  这就是 `All-Seq`
-- `U1`: 训练 `P2-only`
-- `U2`: 训练 `P3-only`
-- `U3`: 训练 `P456-only`
-- `U4`: 训练 `E_all-only`
+## 2. ROI 流程总览
 
-默认所有实验都测试：
+### 2.1 TotalSegmentator 环境
 
-- `P1`
-- `P2`
-- `P3`
-- `P456`
-- `E_all`
-
-## 当前数据上的重要事实
-
-基于你现在的数据统计：
-
-- `P1` 在 `train/test` 都有
-- `P2` 在 `train/test` 都有
-- `P3=ADC` 只在 `train` 有，外部 `test` 没有
-- `P456` 和 `E_all` 在 `train/test` 都有
-
-所以：
-
-- `P3` 只能做内部 CV，不能做外部测试
-- 外部 `P1` 实际主要来自 `T2WI`
-
-这些是数据决定的，不是脚本缺了什么。
-
-## 环境准备
-
-进入环境：
+`TotalSegmentator` 单独放在新环境 `totalseg`：
 
 ```powershell
-conda activate nnu
 cd D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2
-pip install -r requirements.txt
+& .\scripts\roi\create_totalseg_env.ps1
 ```
 
-设置 nnUNet 路径：
+### 2.2 Liver ROI 输出位置
 
-```powershell
-$env:nnUNet_raw="D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\nnUNet_raw"
-$env:nnUNet_preprocessed="D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\nnUNet_preprocessed"
-$env:nnUNet_results="D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\nnUNet_results"
+生成的 liver mask 默认写回原始数据集根目录下，而不是工程 `outputs`：
 
-New-Item -ItemType Directory -Force -Path $env:nnUNet_raw | Out-Null
-New-Item -ItemType Directory -Force -Path $env:nnUNet_preprocessed | Out-Null
-New-Item -ItemType Directory -Force -Path $env:nnUNet_results | Out-Null
+```text
+D:\Dataset003_v2_LiverTumorSeg\liver_roi_totalseg\raw
+D:\Dataset003_v2_LiverTumorSeg\liver_roi_totalseg\clean
+D:\Dataset003_v2_LiverTumorSeg\liver_roi_totalseg\dilated_12mm
 ```
 
-## 公共准备步骤
+这样每个 ROI mask 都和原始 case 一一对应，同时又不污染 `imagesTr / labelsTr / imagesTs / labelsTs`。
 
-这些步骤所有实验只做一次。
+### 2.3 一键准备
 
 ```powershell
-python scripts/propose_manifest.py `
-  --root "D:\Dataset003_v2_LiverTumorSeg" `
-  --out outputs/manifest_proposed.csv
+& .\run_roi_screening_study.ps1
+```
 
-python scripts/validate_manifest.py `
-  --manifest outputs/manifest_proposed.csv `
-  --study-config configs/study_config.yaml `
-  --out-dir outputs/audit `
-  --skip-label-values
+这一步会自动完成：
 
-python scripts/profile_dataset.py `
-  --manifest outputs/manifest_proposed.csv `
-  --study-config configs/study_config.yaml `
-  --out-dir outputs/profile
+1. 为 `D:\Dataset003_v2_LiverTumorSeg` 生成 manifest
+2. 做 patient-level 5-fold 划分
+3. 调用 `TotalSegmentator` 生成 whole-liver ROI
+4. 把 ROI 路径挂回 manifest
+5. 生成所有单序列筛选实验的运行脚本
 
-python scripts/assign_folds.py `
-  --manifest outputs/manifest_proposed.csv `
-  --n-folds 5 `
-  --seed 3407 `
-  --out outputs/manifest_with_folds.csv
+## 3. 单序列 ROI 筛选实验
 
-python scripts/self_audit.py `
-  --manifest outputs/manifest_with_folds.csv `
-  --study-config configs/study_config.yaml `
-  --out-dir outputs/audit
+当前筛选实验为：
+
+| 实验 | 序列 |
+| --- | --- |
+| `RS01` | `T2_MAIN` |
+| `RS02` | `DWI` |
+| `RS03` | `ADC` |
+| `RS04` | `T1` |
+| `RS05` | `InPhase` |
+| `RS06` | `OutPhase` |
+| `RS07` | `C-pre` |
+| `RS08` | `ARTERIAL` |
+| `RS09` | `PORTAL` |
+| `RS10` | `DELAY` |
+
+当前策略：
+
+- 训练输入保留原始空间，但将膨胀 liver mask 外体素置零
+- 训练标签默认裁到 liver ROI 内
+- 推理后再用膨胀 liver mask 去掉肝外预测
+
+### 3.1 跑单个实验
+
+例如先跑 `PORTAL`：
+
+```powershell
+& .\outputs\roi_study\screening\experiments\RS09\suite_commands\run_RS09.ps1
+```
+
+### 3.2 跑完整筛选
+
+```powershell
+& .\outputs\roi_study\screening\experiments\run_all_screening.ps1
+```
+
+### 3.3 汇总筛选结果并选 anchor
+
+```powershell
+python -m scripts.experiments.summarize_sequence_screening `
+  --study-config .\configs\roi_study_config.yaml `
+  --experiments-root .\outputs\roi_study\screening\experiments `
+  --out-dir .\outputs\roi_study\screening\summary `
+  --require-external-for-anchor
 ```
 
 关键输出：
 
-- `outputs/manifest_with_folds.csv`
-- `outputs/profile/DATASET_PROFILE.md`
-- `outputs/profile/experiment_catalog.csv`
+- `outputs/roi_study/screening/summary/sequence_screening_summary.csv`
+- `outputs/roi_study/screening/summary/recommended_anchor.json`
 
-## 推荐入口
+## 4. 配准准备
 
-先运行顶层入口：
+当前工程已经把配准前的 patient-wise 配对关系准备好了，但还没有锁定具体配准算法。
 
-```powershell
-.\run_full_study.ps1
-```
-
-这个脚本会：
-
-1. 跑公共准备步骤
-2. 自动生成每个实验的独立脚本
-
-生成位置：
-
-- `outputs/experiments/A/suite_commands/run_A.ps1`
-- `outputs/experiments/M1/suite_commands/run_M1.ps1`
-- `outputs/experiments/M2/suite_commands/run_M2.ps1`
-- `outputs/experiments/M3/suite_commands/run_M3.ps1`
-- `outputs/experiments/U1/suite_commands/run_U1.ps1`
-- `outputs/experiments/U2/suite_commands/run_U2.ps1`
-- `outputs/experiments/U3/suite_commands/run_U3.ps1`
-- `outputs/experiments/U4/suite_commands/run_U4.ps1`
-
-## 全部实验与优先级
-
-这个工程支持的是完整 8 个实验，不是 3 个实验。
-
-### 全部实验
-
-- `A`: `P1 -> P1 / P2 / P3 / P456 / E_all`
-- `M1`: `P1 + P2 + P3 -> P1 / P2 / P3 / P456 / E_all`
-- `M2`: `P1 + P2 + P3 + P456 -> P1 / P2 / P3 / P456 / E_all`
-- `M3`: `All-Plain + E_all -> P1 / P2 / P3 / P456 / E_all`
-- `U1`: `P2-only -> P1 / P2 / P3 / P456 / E_all`
-- `U2`: `P3-only -> P1 / P2 / P3 / P456 / E_all`
-- `U3`: `P456-only -> P1 / P2 / P3 / P456 / E_all`
-- `U4`: `E_all-only -> P1 / P2 / P3 / P456 / E_all`
-
-### 完整推荐顺序
-
-如果你要按完整设计跑，建议顺序是：
-
-1. `A`
-2. `M1`
-3. `M2`
-4. `M3`
-5. `U1`
-6. `U2`
-7. `U3`
-8. `U4`
-
-其中：
-
-- `A / M1 / M2 / M3` 是主线实验
-- `U1 / U2 / U3 / U4` 补充对照和 ablation
-
-## 手动单独跑某个实验
-
-以 `A` 为例：
+在筛选出 anchor sequence 后运行：
 
 ```powershell
-python scripts/export_nnunet_source_dataset.py `
-  --manifest outputs/manifest_with_folds.csv `
-  --study-config configs/study_config.yaml `
-  --experiment-id A `
-  --nnunet-raw "D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\nnUNet_raw"
-
-python scripts/generate_splits_json.py `
-  --manifest outputs/manifest_with_folds.csv `
-  --study-config configs/study_config.yaml `
-  --experiment-id A `
-  --nnunet-preprocessed "D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2\nnUNet_preprocessed"
-
-nnUNetv2_plan_and_preprocess -d 311 --verify_dataset_integrity
-nnUNetv2_train 311 3d_fullres 0
-nnUNetv2_train 311 3d_fullres 1
-nnUNetv2_train 311 3d_fullres 2
-nnUNetv2_train 311 3d_fullres 3
-nnUNetv2_train 311 3d_fullres 4
-
-python scripts/export_target_test_sets.py `
-  --manifest outputs/manifest_with_folds.csv `
-  --study-config configs/study_config.yaml `
-  --experiment-id A `
-  --out-dir outputs/experiments/A/targets
-
-.\outputs\experiments\A\commands\infer_internal_cv.ps1
-.\outputs\experiments\A\commands\infer_external_test.ps1
-
-python scripts/evaluate_predictions.py `
-  --evaluation-manifest outputs/experiments/A/evaluation_manifest.csv `
-  --out-csv outputs/experiments/A/results/per_case_metrics.csv
-
-python scripts/aggregate_results.py `
-  --metrics outputs/experiments/A/results/per_case_metrics.csv `
-  --audit outputs/audit/self_audit_summary.json `
-  --out-dir outputs/experiments/A/paper_assets
+python -m scripts.experiments.prepare_registration_manifest `
+  --manifest .\outputs\roi_study\manifests\manifest_with_folds_roi.csv `
+  --study-config .\configs\roi_study_config.yaml `
+  --anchor-json .\outputs\roi_study\screening\summary\recommended_anchor.json `
+  --out-dir .\outputs\roi_study\registration
 ```
 
-`M2` 也是同样用法，只要把 `A` 换成 `M2`，`dataset_id` 会自动从配置里读取。
+关键输出：
 
-## 结果看哪里
+- `outputs/roi_study/registration/pairwise_registration_manifest.csv`
+- `outputs/roi_study/registration/registration_patient_summary.csv`
 
-以 `A` 为例：
+## 5. 脚本目录
 
-- `outputs/experiments/A/evaluation_manifest.csv`
-- `outputs/experiments/A/results/per_case_metrics.csv`
-- `outputs/experiments/A/paper_assets/Table2_internal_source_cv.csv`
-- `outputs/experiments/A/paper_assets/Table3_internal_cross_sequence.csv`
-- `outputs/experiments/A/paper_assets/Table4_external_test.csv`
-- `outputs/experiments/A/paper_assets/Table_bundle_raw_breakdown.csv`
+现在 `scripts` 已按功能整理为：
 
-其中：
+- `scripts/lib`: 公共工具与 ROI 工具
+- `scripts/data`: manifest、fold、ROI 感知数据导出
+- `scripts/roi`: TotalSegmentator 与 ROI 生成
+- `scripts/experiments`: 实验脚本生成、筛选汇总、配准清单
+- `scripts/evaluation`: 评估与推理后处理
+- `scripts/quality`: 质控与自检
 
-- `Table2`：同域结果
-- `Table3`：内部跨组结果
-- `Table4`：外部测试结果
-- `Table_bundle_raw_breakdown`：组内原始序列拆解
+## 6. 关键脚本
 
-## 最重要的原则
+- `scripts/roi/create_totalseg_env.ps1`
+- `scripts/roi/run_totalsegmentator_liver_roi.py`
+- `scripts/data/augment_manifest_with_roi.py`
+- `scripts/data/export_nnunet_source_dataset_roi.py`
+- `scripts/data/export_target_test_sets_roi.py`
+- `scripts/evaluation/postprocess_predictions_by_liver_roi.py`
+- `scripts/experiments/summarize_sequence_screening.py`
+- `scripts/experiments/prepare_registration_manifest.py`
+- `scripts/experiments/generate_roi_experiment_scripts.py`
 
-内部评估不能直接用 `-f 0 1 2 3 4` ensemble。
+## 7. 推荐执行顺序
 
-原因是你的数据是同病人多序列结构，如果内部评估用 fold ensemble，会发生 patient leakage，结果虚高。
-
-当前工程已经固定为：
-
-- 内部评估：fold 对应 fold 模型
-- 外部评估：完全未见 `test` 才允许 `0 1 2 3 4` ensemble
+1. 创建 `totalseg` 环境
+2. 运行 `run_roi_screening_study.ps1`
+3. 先跑 `T2_MAIN` 和增强期序列筛选
+4. 汇总 ranking，确定 anchor
+5. 生成配准 manifest
+6. 后续再补具体配准算法与配准后多通道训练

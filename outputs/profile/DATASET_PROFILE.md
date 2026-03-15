@@ -2,37 +2,48 @@
 
 - Total rows: 7059
 - Total patients: 1013
-- Default source sequence in config: T2
-- Default experiment in config: A
+- Default source sequence in config: None
+- Default experiment in config: None
 
 ## Subset counts
 - train: 6251
 - test: 808
 
 ## Group-level target counts
-- P1 / test: 101 patients / 101 cases (T2+T2WI)
-- P1 / train: 909 patients / 909 cases (T2+T2WI)
-- P2 / test: 101 patients / 101 cases (DWI)
-- P2 / train: 397 patients / 397 cases (DWI)
-- P3 / train: 511 patients / 511 cases (ADC)
-- P456 / test: 101 patients / 303 cases (T1+InPhase+OutPhase+C-pre)
-- P456 / train: 909 patients / 1703 cases (T1+InPhase+OutPhase+C-pre)
-- E_all / test: 101 patients / 303 cases (ARTERIAL+PORTAL+DELAY)
-- E_all / train: 912 patients / 2731 cases (ARTERIAL+PORTAL+DELAY)
+- T2_MAIN / test: 101 patients / 101 cases (T2+T2WI)
+- T2_MAIN / train: 909 patients / 909 cases (T2+T2WI)
+- DWI / test: 101 patients / 101 cases (DWI)
+- DWI / train: 397 patients / 397 cases (DWI)
+- ADC / train: 511 patients / 511 cases (ADC)
+- T1 / train: 512 patients / 512 cases (T1)
+- InPhase / test: 101 patients / 101 cases (InPhase)
+- InPhase / train: 397 patients / 397 cases (InPhase)
+- OutPhase / test: 101 patients / 101 cases (OutPhase)
+- OutPhase / train: 397 patients / 397 cases (OutPhase)
+- C-pre / test: 101 patients / 101 cases (C-pre)
+- C-pre / train: 397 patients / 397 cases (C-pre)
+- ARTERIAL / test: 101 patients / 101 cases (ARTERIAL)
+- ARTERIAL / train: 910 patients / 910 cases (ARTERIAL)
+- PORTAL / test: 101 patients / 101 cases (PORTAL)
+- PORTAL / train: 910 patients / 910 cases (PORTAL)
+- DELAY / test: 101 patients / 101 cases (DELAY)
+- DELAY / train: 911 patients / 911 cases (DELAY)
 
 ## Top raw-sequence source candidates
 - DELAY: 911 patients / 911 cases
 - ARTERIAL: 910 patients / 910 cases
 - PORTAL: 910 patients / 910 cases
 - T1: 512 patients / 512 cases
-- T2: 512 patients / 512 cases (default)
+- T2: 512 patients / 512 cases
 
 ## Experiment catalog
-- A (dataset 311): train P1 only, test on P1/P2/P3/P456/E_all | train 909 patients / 909 cases | source T2+T2WI
-- M1 (dataset 312): train on P1+P2+P3 | train 910 patients / 1817 cases | source T2+T2WI+DWI+ADC
-- M2 (dataset 313): train on all plain MRI sequences | train 910 patients / 3520 cases | source T2+T2WI+DWI+ADC+T1+InPhase+OutPhase+C-pre
-- M3 (dataset 314): train on all sequences | train 912 patients / 6251 cases | source T2+T2WI+DWI+ADC+T1+InPhase+OutPhase+C-pre+ARTERIAL+PORTAL+DELAY
-- U1 (dataset 315): train on P2 only | train 397 patients / 397 cases | source DWI
-- U2 (dataset 316): train on P3 only | train 511 patients / 511 cases | source ADC
-- U3 (dataset 317): train on P456 only | train 909 patients / 1703 cases | source T1+InPhase+OutPhase+C-pre
-- U4 (dataset 318): train on E_all only | train 912 patients / 2731 cases | source ARTERIAL+PORTAL+DELAY
+- RS01 (dataset 401): ROI-constrained single-sequence screening using T2/T2WI family | train 909 patients / 909 cases | logical source T2_MAIN | raw members T2+T2WI
+- RS02 (dataset 402): ROI-constrained single-sequence screening using DWI | train 397 patients / 397 cases | logical source DWI | raw members DWI
+- RS03 (dataset 403): ROI-constrained single-sequence screening using ADC | train 511 patients / 511 cases | logical source ADC | raw members ADC
+- RS04 (dataset 404): ROI-constrained single-sequence screening using T1 | train 512 patients / 512 cases | logical source T1 | raw members T1
+- RS05 (dataset 405): ROI-constrained single-sequence screening using InPhase | train 397 patients / 397 cases | logical source InPhase | raw members InPhase
+- RS06 (dataset 406): ROI-constrained single-sequence screening using OutPhase | train 397 patients / 397 cases | logical source OutPhase | raw members OutPhase
+- RS07 (dataset 407): ROI-constrained single-sequence screening using C-pre | train 397 patients / 397 cases | logical source C-pre | raw members C-pre
+- RS08 (dataset 408): ROI-constrained single-sequence screening using ARTERIAL | train 910 patients / 910 cases | logical source ARTERIAL | raw members ARTERIAL
+- RS09 (dataset 409): ROI-constrained single-sequence screening using PORTAL | train 910 patients / 910 cases | logical source PORTAL | raw members PORTAL
+- RS10 (dataset 410): ROI-constrained single-sequence screening using DELAY | train 911 patients / 911 cases | logical source DELAY | raw members DELAY

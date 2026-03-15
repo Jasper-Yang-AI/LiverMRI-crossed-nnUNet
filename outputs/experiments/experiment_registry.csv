@@ -1,9 +1,0 @@
-﻿experiment_id,dataset_id,source_tag,source_bundle,source_members,targets,description,script_ps1
-A,311,A,P1,T2+T2WI,P1+P2+P3+P456+E_all,"train P1 only, test on P1/P2/P3/P456/E_all",outputs\experiments\A\suite_commands\run_A.ps1
-M1,312,M1,M1,T2+T2WI+DWI+ADC,P1+P2+P3+P456+E_all,train on P1+P2+P3,outputs\experiments\M1\suite_commands\run_M1.ps1
-M2,313,M2,M2,T2+T2WI+DWI+ADC+T1+InPhase+OutPhase+C-pre,P1+P2+P3+P456+E_all,train on all plain MRI sequences,outputs\experiments\M2\suite_commands\run_M2.ps1
-M3,314,M3,M3,T2+T2WI+DWI+ADC+T1+InPhase+OutPhase+C-pre+ARTERIAL+PORTAL+DELAY,P1+P2+P3+P456+E_all,train on all sequences,outputs\experiments\M3\suite_commands\run_M3.ps1
-U1,315,U1,U1,DWI,P1+P2+P3+P456+E_all,train on P2 only,outputs\experiments\U1\suite_commands\run_U1.ps1
-U2,316,U2,U2,ADC,P1+P2+P3+P456+E_all,train on P3 only,outputs\experiments\U2\suite_commands\run_U2.ps1
-U3,317,U3,U3,T1+InPhase+OutPhase+C-pre,P1+P2+P3+P456+E_all,train on P456 only,outputs\experiments\U3\suite_commands\run_U3.ps1
-U4,318,U4,U4,ARTERIAL+PORTAL+DELAY,P1+P2+P3+P456+E_all,train on E_all only,outputs\experiments\U4\suite_commands\run_U4.ps1

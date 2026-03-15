@@ -1,0 +1,247 @@
+study_name: liver_mri_roi_registration_pipeline
+task_type: tumor_segmentation
+dataset_root: D:\Dataset003_v2_LiverTumorSeg
+
+labels:
+  background: 0
+  tumor: 1
+
+default_targets:
+  - T2_MAIN
+  - DWI
+  - ADC
+  - T1
+  - InPhase
+  - OutPhase
+  - C-pre
+  - ARTERIAL
+  - PORTAL
+  - DELAY
+
+target_bundles:
+  T2_MAIN:
+    description: merged logical T2 family
+    members:
+      - T2
+      - T2WI
+  DWI:
+    description: diffusion-weighted imaging
+    members:
+      - DWI
+  ADC:
+    description: apparent diffusion coefficient
+    members:
+      - ADC
+  T1:
+    description: plain T1 sequence
+    members:
+      - T1
+  InPhase:
+    description: in-phase plain sequence
+    members:
+      - InPhase
+  OutPhase:
+    description: out-phase plain sequence
+    members:
+      - OutPhase
+  C-pre:
+    description: pre-contrast sequence
+    members:
+      - C-pre
+  ARTERIAL:
+    description: arterial phase enhanced sequence
+    members:
+      - ARTERIAL
+  PORTAL:
+    description: portal venous phase enhanced sequence
+    members:
+      - PORTAL
+  DELAY:
+    description: delayed/hepatobiliary sequence
+    members:
+      - DELAY
+
+sequence_bundles:
+  T2_MAIN:
+    - T2
+    - T2WI
+
+sequence_aliases:
+  T2:
+    - T2
+  T2WI:
+    - T2WI
+    - T2W
+  DWI:
+    - DWI
+  ADC:
+    - ADC
+  T1:
+    - T1
+  InPhase:
+    - InPhase
+    - INPHASE
+    - IN_PHASE
+  OutPhase:
+    - OutPhase
+    - OUTPHASE
+    - OUT_PHASE
+  C-pre:
+    - C-pre
+    - CPRE
+    - PRE
+    - PRECONTRAST
+  ARTERIAL:
+    - C+A
+    - AP
+    - ARTERIAL
+  PORTAL:
+    - C+V
+    - VP
+    - PORTAL
+  DELAY:
+    - C+Delay
+    - HP
+    - DELAY
+    - HBP
+
+label_keywords:
+  - label
+  - seg
+  - mask
+  - anno
+
+nnunet:
+  trainer: nnUNetTrainer
+  configuration: 3d_fullres
+  ensemble_folds: [0, 1, 2, 3, 4]
+
+roi:
+  task: total_mr
+  roi_name: liver
+  conda_env: totalseg
+  clean_largest_component: true
+  fill_holes: true
+  dilation_mm: 12.0
+  crop_margin_mm: 20.0
+  screening_roi_column: roi_mask_dilated_path
+  postprocess_roi_column: roi_mask_dilated_path
+  screening_mode: masked
+  post_registration_mode: cropped
+  min_liver_voxels: 5000
+
+metrics:
+  - dice
+  - hd95
+  - lesion_recall
+  - lesion_precision
+  - lesion_f1
+  - volume_relative_error
+
+experiments:
+  RS01:
+    description: ROI-constrained single-sequence screening using T2/T2WI family
+    dataset_id: 401
+    source_tag: T2_MAIN
+    source_bundle: T2_MAIN
+    primary_target: T2_MAIN
+    source_targets: [T2_MAIN]
+    targets: [T2_MAIN]
+    stage: screening
+  RS02:
+    description: ROI-constrained single-sequence screening using DWI
+    dataset_id: 402
+    source_tag: DWI
+    source_bundle: DWI
+    primary_target: DWI
+    source_targets: [DWI]
+    targets: [DWI]
+    stage: screening
+  RS03:
+    description: ROI-constrained single-sequence screening using ADC
+    dataset_id: 403
+    source_tag: ADC
+    source_bundle: ADC
+    primary_target: ADC
+    source_targets: [ADC]
+    targets: [ADC]
+    stage: screening
+  RS04:
+    description: ROI-constrained single-sequence screening using T1
+    dataset_id: 404
+    source_tag: T1
+    source_bundle: T1
+    primary_target: T1
+    source_targets: [T1]
+    targets: [T1]
+    stage: screening
+  RS05:
+    description: ROI-constrained single-sequence screening using InPhase
+    dataset_id: 405
+    source_tag: InPhase
+    source_bundle: InPhase
+    primary_target: InPhase
+    source_targets: [InPhase]
+    targets: [InPhase]
+    stage: screening
+  RS06:
+    description: ROI-constrained single-sequence screening using OutPhase
+    dataset_id: 406
+    source_tag: OutPhase
+    source_bundle: OutPhase
+    primary_target: OutPhase
+    source_targets: [OutPhase]
+    targets: [OutPhase]
+    stage: screening
+  RS07:
+    description: ROI-constrained single-sequence screening using C-pre
+    dataset_id: 407
+    source_tag: C-pre
+    source_bundle: C-pre
+    primary_target: C-pre
+    source_targets: [C-pre]
+    targets: [C-pre]
+    stage: screening
+  RS08:
+    description: ROI-constrained single-sequence screening using ARTERIAL
+    dataset_id: 408
+    source_tag: ARTERIAL
+    source_bundle: ARTERIAL
+    primary_target: ARTERIAL
+    source_targets: [ARTERIAL]
+    targets: [ARTERIAL]
+    stage: screening
+  RS09:
+    description: ROI-constrained single-sequence screening using PORTAL
+    dataset_id: 409
+    source_tag: PORTAL
+    source_bundle: PORTAL
+    primary_target: PORTAL
+    source_targets: [PORTAL]
+    targets: [PORTAL]
+    stage: screening
+  RS10:
+    description: ROI-constrained single-sequence screening using DELAY
+    dataset_id: 410
+    source_tag: DELAY
+    source_bundle: DELAY
+    primary_target: DELAY
+    source_targets: [DELAY]
+    targets: [DELAY]
+    stage: screening
+
+post_registration:
+  note: registration algorithm is intentionally left open; use prepare_registration_manifest.py to stage jobs
+  expected_anchor_metric: external_dice_mean
+  crop_margin_mm: 20.0
+  candidate_channels:
+    - T2_MAIN
+    - DWI
+    - ADC
+    - T1
+    - InPhase
+    - OutPhase
+    - C-pre
+    - ARTERIAL
+    - PORTAL
+    - DELAY

@@ -9,8 +9,8 @@
     "internal_cv": 6251,
     "external_test": 808
   },
-  "default_source_sequence": "T2",
-  "default_experiment": "A",
+  "default_source_sequence": null,
+  "default_experiment": null,
   "top_source_candidates": [
     {
       "seq_group": "DELAY",
@@ -40,7 +40,7 @@
       "seq_group": "T2",
       "n_cases": 512,
       "n_patients": 512,
-      "is_default_source": true
+      "is_default_source": false
     }
   ]
 }

@@ -1,4 +1,5 @@
 {
+  "layout": "nnunet_like",
   "n_rows": 7059,
   "n_patients": 1013,
   "subset_counts": {
@@ -18,8 +19,6 @@
     "OutPhase": 498,
     "T2WI": 498
   },
-  "missing_vendor_rate": 1.0,
-  "n_issues": 0,
-  "max_rows": null,
-  "skip_label_values": true
+  "n_missing_labels": 0,
+  "n_unknown_sequences": 0
 }
