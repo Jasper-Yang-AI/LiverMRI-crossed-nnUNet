@@ -31,6 +31,7 @@ python -m scripts.roi.run_totalsegmentator_liver_roi `
   --manifest (Join-Path $MANIFEST_DIR "manifest_with_folds.csv") `
   --study-config $CONFIG `
   --out-dir $ROI_DIR `
+  --device gpu:1 `
   --skip-existing
 
 python -m scripts.data.augment_manifest_with_roi `

@@ -63,6 +63,8 @@ def build_command(args, image_path: Path, temp_dir: Path) -> list[str]:
             args.roi_name,
         ]
     )
+    if args.device:
+        command.extend(["--device", args.device])
     if args.body_seg:
         command.append("--body_seg")
     return command
@@ -82,6 +84,7 @@ def main():
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--conda-env", default=None, help="Optional conda env used via `conda run -n <env>`.")
     parser.add_argument("--totalsegmentator-exe", default="TotalSegmentator")
+    parser.add_argument("--device", default=None, help="TotalSegmentator device, e.g. cpu, gpu, gpu:1, mps")
     parser.add_argument("--task", default=None)
     parser.add_argument("--roi-name", default=None)
     parser.add_argument("--dilation-mm", type=float, default=None)
@@ -97,6 +100,7 @@ def main():
     args.task = args.task or roi_cfg.get("task", "total_mr")
     args.roi_name = args.roi_name or roi_cfg.get("roi_name", "liver")
     args.conda_env = args.conda_env or roi_cfg.get("conda_env")
+    args.device = args.device or roi_cfg.get("device")
     args.dilation_mm = float(args.dilation_mm if args.dilation_mm is not None else roi_cfg.get("dilation_mm", 12.0))
     args.min_liver_voxels = int(
         args.min_liver_voxels if args.min_liver_voxels is not None else roi_cfg.get("min_liver_voxels", 5000)
