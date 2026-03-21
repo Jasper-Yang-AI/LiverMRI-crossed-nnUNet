@@ -1,0 +1,68 @@
+experiment:
+  name: liver_mri_crossseq_fusion
+  dataset_root: D:\Dataset003_v2_LiverTumorSeg
+  study_config: configs/dataset/livermri_crossseq_dataset.yaml
+  workspace_root: workspaces/livermri_crossseq
+
+anchor:
+  shortlist:
+    - PORTAL
+    - DELAY
+    - T2_MAIN
+  pilot_cases: 40
+  selection_weights:
+    external_dice: 0.45
+    lesion_f1: 0.2
+    coverage: 0.2
+    external_hd95: 0.15
+
+registration:
+  fixed_to_anchor_only: true
+  roi_column: roi_mask_clean_path
+  liver_confidence_sigma: 1.0
+  methods:
+    - id: affine
+      family: affine
+      description: Liver-guided affine baseline
+    - id: elastix_bspline
+      family: elastix_bspline
+      description: Affine plus B-spline baseline
+    - id: ants_syn
+      family: ants_syn
+      description: Affine plus SyN main method
+
+model:
+  anchor_target: PORTAL
+  candidate_sequences:
+    - PORTAL
+    - ARTERIAL
+    - DELAY
+    - T2_MAIN
+    - DWI
+    - ADC
+  minimum_present_sequences: 2
+  include_confidence_channels: true
+  include_liver_mask_channel: true
+  crop_margin_mm: 20.0
+  trainer_name: nnUNetTrainerCrossSeqFusion
+  plans_name: nnUNetResEncUNetPlans
+  backbone_configuration: 3d_fullres
+  branch_stem_channels: 16
+  drop_anchor_sequence: false
+  dropout:
+    warmup_fraction: 0.25
+    warmup_drop_probability: 0.05
+    main_drop_probability: 0.3
+    max_dropped_sequences: 2
+  loss:
+    aux_weight: 0.3
+    consistency_weight: 0.1
+    outside_liver_weight: 0.15
+  augmentation:
+    protect_non_image_channels: true
+
+export:
+  dataset_id: 451
+  dataset_name_suffix: CrossSeqFusion
+  missing_sequence_fill: zeros
+  save_case_manifest: true

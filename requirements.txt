@@ -1,4 +1,5 @@
-nnunetv2
+-e ./vendor/nnUNet
+-e .
 nibabel
 SimpleITK
 numpy

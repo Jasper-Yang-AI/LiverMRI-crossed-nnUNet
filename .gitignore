@@ -24,6 +24,12 @@ __pycache__/
 nnUNet_raw/
 nnUNet_preprocessed/
 nnUNet_results/
+nnUNet_raw_roi_screening/
+nnUNet_preprocessed_roi_screening/
+nnUNet_results_roi_screening/
+nnUNet_raw_sequence_screening/
+nnUNet_preprocessed_sequence_screening/
+nnUNet_results_sequence_screening/
 outputs/nnUNet_raw/
 outputs/nnUNet_preprocessed/
 outputs/nnUNet_results/
@@ -39,3 +45,6 @@ outputs/**
 !outputs/**/*.yml
 !outputs/**/*.txt
 !outputs/**/*.ps1
+
+# Cross-sequence runtime workspace
+workspaces/
