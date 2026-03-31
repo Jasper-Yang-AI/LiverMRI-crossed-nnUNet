@@ -5,10 +5,10 @@
 ## 阶段 1：单序列筛选
 
 入口脚本：
-- [run_livermri_sequence_screening.ps1](D:/livermri_crossseq_nnunetv2/LiverMRI-CrossSeq-nnUNetv2/run_livermri_sequence_screening.ps1)
+- [run_livermri_sequence_screening.ps1](../run_livermri_sequence_screening.ps1)
 
 核心配置：
-- [livermri_crossseq_dataset.yaml](D:/livermri_crossseq_nnunetv2/LiverMRI-CrossSeq-nnUNetv2/configs/dataset/livermri_crossseq_dataset.yaml)
+- [livermri_crossseq_dataset.yaml](../configs/dataset/livermri_crossseq_dataset.yaml)
 
 这一阶段完成：
 
@@ -52,7 +52,7 @@ python -m scripts.experiment.prepare_registration_manifest `
 ## 阶段 4：跨序列融合
 
 入口脚本：
-- [run_livermri_crossseq_pipeline.ps1](D:/livermri_crossseq_nnunetv2/LiverMRI-CrossSeq-nnUNetv2/run_livermri_crossseq_pipeline.ps1)
+- [run_livermri_crossseq_pipeline.ps1](../run_livermri_crossseq_pipeline.ps1)
 
 主实验配置：
-- [livermri_crossseq_fusion.yaml](D:/livermri_crossseq_nnunetv2/LiverMRI-CrossSeq-nnUNetv2/configs/experiment/livermri_crossseq_fusion.yaml)
+- [livermri_crossseq_fusion.yaml](../configs/experiment/livermri_crossseq_fusion.yaml)

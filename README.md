@@ -155,7 +155,7 @@ pip install TotalSegmentator
 后面的命令默认都在仓库根目录执行:
 
 ```powershell
-Set-Location -LiteralPath D:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2
+Set-Location -LiteralPath <repo_root>  # 例如 E:\livermri_crossseq_nnunetv2\LiverMRI-CrossSeq-nnUNetv2
 ```
 
 ## 5. 数据应该长什么样

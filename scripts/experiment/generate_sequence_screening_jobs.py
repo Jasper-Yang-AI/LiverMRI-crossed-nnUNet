@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -14,6 +15,33 @@ def quote_ps(value: str) -> str:
 
 def to_abs(path_like: str | Path) -> Path:
     return Path(path_like).resolve()
+
+
+def path_expr_from(base_var: str, relative_path: str) -> str:
+    relative_path = relative_path.replace("/", "\\")
+    return f'[System.IO.Path]::GetFullPath((Join-Path {base_var} {quote_ps(relative_path)}))'
+
+
+def try_relative_to(path: Path, base: Path) -> Path | None:
+    try:
+        return path.relative_to(base)
+    except ValueError:
+        return None
+
+
+def repo_path_expr(path: Path, repo_root: Path) -> str:
+    relative_path = try_relative_to(path, repo_root)
+    if relative_path is None:
+        return quote_ps(str(path))
+    return path_expr_from("$RepoRoot", "." if str(relative_path) in {"", "."} else str(relative_path))
+
+
+def relpath_expr(target: Path, origin: Path, origin_var: str) -> str:
+    try:
+        relative_path = os.path.relpath(target, origin)
+    except ValueError:
+        return quote_ps(str(target))
+    return path_expr_from(origin_var, relative_path)
 
 
 def append_checked_step(ps_lines: list[str], command: str, step_name: str) -> None:
@@ -34,21 +62,33 @@ def build_run_lines(experiment_id: str, exp: dict, args, cfg: dict) -> list[str]
     postprocess_roi_column = roi_cfg.get("postprocess_roi_column", roi_column)
 
     exp_root = to_abs(Path(args.out_dir) / experiment_id)
-    targets_dir = exp_root / "targets"
     results_dir = exp_root / "results"
-    reports_dir = exp_root / "reports"
-    infer_internal_ps = exp_root / "commands" / "infer_internal_cv.ps1"
-    infer_external_ps = exp_root / "commands" / "infer_external_test.ps1"
-    postprocessed_manifest = exp_root / "evaluation_manifest_postprocessed.csv"
-    postprocessed_pred_root = exp_root / "predictions_postprocessed"
+    command_root = exp_root / "commands"
 
     ps_lines = [
         "$ErrorActionPreference = \"Stop\"",
-        f"$RepoRoot = {quote_ps(str(args.repo_root))}",
+        "$CommandRoot = $PSScriptRoot",
+        "$ExperimentRoot = [System.IO.Path]::GetFullPath((Join-Path $CommandRoot '..'))",
+        f"$RepoRoot = {relpath_expr(args.repo_root, command_root, '$CommandRoot')}",
         "Set-Location -LiteralPath $RepoRoot",
-        f"$env:nnUNet_raw = {quote_ps(str(args.nnunet_raw))}",
-        f"$env:nnUNet_preprocessed = {quote_ps(str(args.nnunet_preprocessed))}",
-        f"$env:nnUNet_results = {quote_ps(str(args.nnunet_results))}",
+        f"$ManifestPath = {repo_path_expr(args.manifest, args.repo_root)}",
+        f"$StudyConfigPath = {repo_path_expr(args.study_config, args.repo_root)}",
+        f"$NNUNetRawPath = {repo_path_expr(args.nnunet_raw, args.repo_root)}",
+        f"$NNUNetPreprocessedPath = {repo_path_expr(args.nnunet_preprocessed, args.repo_root)}",
+        f"$NNUNetResultsPath = {repo_path_expr(args.nnunet_results, args.repo_root)}",
+        f"$ExportedCaseManifestPath = {repo_path_expr(exported_case_manifest, args.repo_root)}",
+        "$TargetsDir = [System.IO.Path]::GetFullPath((Join-Path $ExperimentRoot 'targets'))",
+        "$InferInternalScript = [System.IO.Path]::GetFullPath((Join-Path $CommandRoot 'infer_internal_cv.ps1'))",
+        "$InferExternalScript = [System.IO.Path]::GetFullPath((Join-Path $CommandRoot 'infer_external_test.ps1'))",
+        "$EvaluationManifestPath = [System.IO.Path]::GetFullPath((Join-Path $ExperimentRoot 'evaluation_manifest.csv'))",
+        "$PostprocessedManifestPath = [System.IO.Path]::GetFullPath((Join-Path $ExperimentRoot 'evaluation_manifest_postprocessed.csv'))",
+        "$PostprocessedPredRoot = [System.IO.Path]::GetFullPath((Join-Path $ExperimentRoot 'predictions_postprocessed'))",
+        "$ResultsDir = [System.IO.Path]::GetFullPath((Join-Path $ExperimentRoot 'results'))",
+        "$MetricsCsvPath = [System.IO.Path]::GetFullPath((Join-Path $ResultsDir 'per_case_metrics.csv'))",
+        "$ReportsDir = [System.IO.Path]::GetFullPath((Join-Path $ExperimentRoot 'reports'))",
+        "$env:nnUNet_raw = $NNUNetRawPath",
+        "$env:nnUNet_preprocessed = $NNUNetPreprocessedPath",
+        "$env:nnUNet_results = $NNUNetResultsPath",
         "$env:CUDA_DEVICE_ORDER = 'PCI_BUS_ID'",
         f"$env:CUDA_VISIBLE_DEVICES = '{args.gpu_id}'",
         "New-Item -ItemType Directory -Force -Path $env:nnUNet_raw | Out-Null",
@@ -59,9 +99,9 @@ def build_run_lines(experiment_id: str, exp: dict, args, cfg: dict) -> list[str]
     append_checked_step(
         ps_lines,
         (
-            f"python -m scripts.dataset.export_sequence_screening_dataset --manifest {quote_ps(str(args.manifest))} "
-            f"--study-config {quote_ps(str(args.study_config))} --experiment-id {experiment_id} "
-            f"--nnunet-raw {quote_ps(str(args.nnunet_raw))} --roi-column {roi_column} --roi-mode {roi_mode} "
+            f"python -m scripts.dataset.export_sequence_screening_dataset --manifest $ManifestPath "
+            f"--study-config $StudyConfigPath --experiment-id {experiment_id} "
+            f"--nnunet-raw $NNUNetRawPath --roi-column {roi_column} --roi-mode {roi_mode} "
             f"--crop-margin-mm {crop_margin_mm}"
         ),
         f"{experiment_id} export source dataset",
@@ -69,10 +109,10 @@ def build_run_lines(experiment_id: str, exp: dict, args, cfg: dict) -> list[str]
     append_checked_step(
         ps_lines,
         (
-            f"python -m scripts.dataset.generate_splits_json --manifest {quote_ps(str(args.manifest))} "
-            f"--study-config {quote_ps(str(args.study_config))} --experiment-id {experiment_id} "
-            f"--nnunet-preprocessed {quote_ps(str(args.nnunet_preprocessed))} "
-            f"--exported-case-manifest {quote_ps(str(exported_case_manifest))}"
+            f"python -m scripts.dataset.generate_splits_json --manifest $ManifestPath "
+            f"--study-config $StudyConfigPath --experiment-id {experiment_id} "
+            f"--nnunet-preprocessed $NNUNetPreprocessedPath "
+            f"--exported-case-manifest $ExportedCaseManifestPath"
         ),
         f"{experiment_id} generate splits",
     )
@@ -85,21 +125,21 @@ def build_run_lines(experiment_id: str, exp: dict, args, cfg: dict) -> list[str]
     append_checked_step(
         ps_lines,
         (
-            f"python -m scripts.dataset.export_sequence_screening_targets --manifest {quote_ps(str(args.manifest))} "
-            f"--study-config {quote_ps(str(args.study_config))} --experiment-id {experiment_id} "
-            f"--out-dir {quote_ps(str(targets_dir))} --roi-column {roi_column} --roi-mode {roi_mode} "
+            f"python -m scripts.dataset.export_sequence_screening_targets --manifest $ManifestPath "
+            f"--study-config $StudyConfigPath --experiment-id {experiment_id} "
+            f"--out-dir $TargetsDir --roi-column {roi_column} --roi-mode {roi_mode} "
             f"--crop-margin-mm {crop_margin_mm}"
         ),
         f"{experiment_id} export targets",
     )
-    ps_lines.append(f"& {quote_ps(str(infer_internal_ps))}")
-    ps_lines.append(f"& {quote_ps(str(infer_external_ps))}")
+    ps_lines.append("& $InferInternalScript")
+    ps_lines.append("& $InferExternalScript")
     append_checked_step(
         ps_lines,
         (
-            f"python -m scripts.eval.constrain_predictions_to_liver_roi --evaluation-manifest "
-            f"{quote_ps(str(exp_root / 'evaluation_manifest.csv'))} --out-manifest {quote_ps(str(postprocessed_manifest))} "
-            f"--out-root {quote_ps(str(postprocessed_pred_root))} --roi-column {postprocess_roi_column} "
+            "python -m scripts.eval.constrain_predictions_to_liver_roi --evaluation-manifest "
+            f"$EvaluationManifestPath --out-manifest $PostprocessedManifestPath "
+            f"--out-root $PostprocessedPredRoot --roi-column {postprocess_roi_column} "
             "--keep-original-when-missing-roi"
         ),
         f"{experiment_id} constrain predictions to liver ROI",
@@ -107,14 +147,14 @@ def build_run_lines(experiment_id: str, exp: dict, args, cfg: dict) -> list[str]
     append_checked_step(
         ps_lines,
         (
-            f"python -m scripts.eval.evaluate_predictions --evaluation-manifest {quote_ps(str(postprocessed_manifest))} "
-            f"--out-csv {quote_ps(str(results_dir / 'per_case_metrics.csv'))}"
+            "python -m scripts.eval.evaluate_predictions --evaluation-manifest $PostprocessedManifestPath "
+            "--out-csv $MetricsCsvPath"
         ),
         f"{experiment_id} evaluate predictions",
     )
     append_checked_step(
         ps_lines,
-        f"python -m scripts.eval.aggregate_results --metrics {quote_ps(str(results_dir / 'per_case_metrics.csv'))} --out-dir {quote_ps(str(reports_dir))}",
+        "python -m scripts.eval.aggregate_results --metrics $MetricsCsvPath --out-dir $ReportsDir",
         f"{experiment_id} aggregate results",
     )
 
@@ -146,7 +186,10 @@ def main():
     cfg = load_yaml(args.study_config)
     out_dir = ensure_dir(args.out_dir)
     rows = []
-    suite_ps_lines = ["$ErrorActionPreference = \"Stop\""]
+    suite_ps_lines = [
+        "$ErrorActionPreference = \"Stop\"",
+        "$JobsRoot = $PSScriptRoot",
+    ]
 
     for experiment_id, exp in cfg.get("experiments", {}).items():
         if exp.get("stage") != "screening":
@@ -157,7 +200,7 @@ def main():
         ps_lines = build_run_lines(experiment_id, exp, args, cfg)
         ps_path = commands_dir / f"run_{experiment_id}.ps1"
         ps_path.write_text("\n".join(ps_lines) + "\n", encoding="utf-8")
-        suite_ps_lines.append(f"& {quote_ps(str(ps_path))}")
+        suite_ps_lines.append(f"& {path_expr_from('$JobsRoot', str(ps_path.relative_to(out_dir)))}")
 
         rows.append(
             {
@@ -166,7 +209,7 @@ def main():
                 "source_tag": exp.get("source_tag", experiment_id),
                 "primary_target": exp.get("primary_target", ""),
                 "description": exp.get("description", ""),
-                "script_ps1": str(ps_path),
+                "script_ps1": str(ps_path.relative_to(repo_root)) if try_relative_to(ps_path, repo_root) is not None else str(ps_path),
             }
         )
 

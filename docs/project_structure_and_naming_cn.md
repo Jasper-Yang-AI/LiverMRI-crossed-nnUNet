@@ -62,10 +62,10 @@
 ## 5. 当前标准文件
 
 - 数据集配置：
-  [livermri_crossseq_dataset.yaml](D:/livermri_crossseq_nnunetv2/LiverMRI-CrossSeq-nnUNetv2/configs/dataset/livermri_crossseq_dataset.yaml)
+  [livermri_crossseq_dataset.yaml](../configs/dataset/livermri_crossseq_dataset.yaml)
 - 融合实验配置：
-  [livermri_crossseq_fusion.yaml](D:/livermri_crossseq_nnunetv2/LiverMRI-CrossSeq-nnUNetv2/configs/experiment/livermri_crossseq_fusion.yaml)
+  [livermri_crossseq_fusion.yaml](../configs/experiment/livermri_crossseq_fusion.yaml)
 - 单序列筛选入口：
-  [run_livermri_sequence_screening.ps1](D:/livermri_crossseq_nnunetv2/LiverMRI-CrossSeq-nnUNetv2/run_livermri_sequence_screening.ps1)
+  [run_livermri_sequence_screening.ps1](../run_livermri_sequence_screening.ps1)
 - 跨序列主流程入口：
-  [run_livermri_crossseq_pipeline.ps1](D:/livermri_crossseq_nnunetv2/LiverMRI-CrossSeq-nnUNetv2/run_livermri_crossseq_pipeline.ps1)
+  [run_livermri_crossseq_pipeline.ps1](../run_livermri_crossseq_pipeline.ps1)
