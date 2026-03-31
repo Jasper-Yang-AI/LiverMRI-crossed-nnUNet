@@ -1,13 +1,14 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 
 import pandas as pd
 
 from scripts.common.common import ensure_dir, expand_named_collection, load_yaml, make_case_id, resolve_experiment
-from scripts.common.roi_utils import save_nifti, transform_case_with_roi
+from scripts.common.roi_utils import mask_has_foreground, save_nifti, transform_case_with_roi
 
 
 def resolve_selected_groups(args, cfg) -> tuple[str, list[str]]:
@@ -31,6 +32,20 @@ def resolve_selected_groups(args, cfg) -> tuple[str, list[str]]:
         return args.source_tag or args.seq_group, [args.seq_group]
 
     raise ValueError("Provide one of `--seq-group`, `--seq-groups`, or `--seq-bundle`.")
+
+
+def build_skip_row(row: pd.Series, case_id: str, case_stem: str, roi_path: Path, reason: str) -> dict:
+    return {
+        "case_id": case_id,
+        "case_stem": case_stem,
+        "patient_id": row["patient_id"],
+        "seq_raw": row["seq_raw"],
+        "seq_group": row["seq_group"],
+        "fold": int(row["fold"]) if "fold" in row and pd.notna(row["fold"]) else -1,
+        "subset": row.get("subset", "train"),
+        "roi_path": str(roi_path),
+        "skip_reason": reason,
+    }
 
 
 def main():
@@ -80,24 +95,42 @@ def main():
 
     dataset_name = f"Dataset{dataset_id:03d}_LiverTumor_{source_tag}"
     base = Path(args.nnunet_raw) / dataset_name
+    if base.exists():
+        shutil.rmtree(base)
     images_tr = ensure_dir(base / "imagesTr")
     labels_tr = ensure_dir(base / "labelsTr")
 
     exported_rows = []
+    skipped_rows = []
     for _, row in df.iterrows():
         case_stem = str(row["case_stem"])
         case_id = make_case_id(case_stem)
+        roi_path = Path(str(row[roi_column]))
+        if not roi_path.exists():
+            skipped_rows.append(build_skip_row(row, case_id, case_stem, roi_path, "roi_missing"))
+            continue
+        if not mask_has_foreground(roi_path):
+            skipped_rows.append(build_skip_row(row, case_id, case_stem, roi_path, "roi_empty"))
+            continue
+
         dst_img = images_tr / f"{case_id}_0000.nii.gz"
         dst_lab = labels_tr / f"{case_id}.nii.gz"
-        image_nifti, label_nifti, meta = transform_case_with_roi(
-            image_path=row["image_path"],
-            label_path=row["label_path"],
-            roi_path=row[roi_column],
-            roi_mode=roi_mode,
-            outside_value=args.outside_value,
-            crop_margin_mm=crop_margin_mm,
-            clip_label=clip_label,
-        )
+        try:
+            image_nifti, label_nifti, meta = transform_case_with_roi(
+                image_path=row["image_path"],
+                label_path=row["label_path"],
+                roi_path=roi_path,
+                roi_mode=roi_mode,
+                outside_value=args.outside_value,
+                crop_margin_mm=crop_margin_mm,
+                clip_label=clip_label,
+            )
+        except ValueError as exc:
+            if "ROI mask is empty" not in str(exc):
+                raise
+            skipped_rows.append(build_skip_row(row, case_id, case_stem, roi_path, "roi_empty_after_load"))
+            continue
+
         save_nifti(image_nifti, dst_img)
         save_nifti(label_nifti, dst_lab)
 
@@ -112,13 +145,16 @@ def main():
                 "subset": row.get("subset", "train"),
                 "image_path": str(row["image_path"]),
                 "label_path": str(row["label_path"]),
-                "roi_path": str(row[roi_column]),
+                "roi_path": str(roi_path),
                 "roi_mode": roi_mode,
                 "roi_column": roi_column,
                 "outside_value": args.outside_value,
                 **meta,
             }
         )
+
+    if not exported_rows:
+        raise ValueError(f"No cases were exported for {source_tag}. Skipped rows: {len(skipped_rows)}")
 
     dataset_json = {
         "channel_names": {"0": "MRI"},
@@ -133,7 +169,11 @@ def main():
         json.dump(dataset_json, handle, indent=2, ensure_ascii=False)
 
     pd.DataFrame(exported_rows).to_csv(base / "case_manifest.csv", index=False, encoding="utf-8-sig")
+    if skipped_rows:
+        pd.DataFrame(skipped_rows).to_csv(base / "skipped_cases.csv", index=False, encoding="utf-8-sig")
     print(f"Exported {len(exported_rows)} cases to {base}")
+    if skipped_rows:
+        print(f"Skipped {len(skipped_rows)} cases due to unusable ROI masks")
     print(f"Source tag: {source_tag}")
     print(f"Included sequence groups: {selected_groups}")
     print(f"ROI mode: {roi_mode} | ROI column: {roi_column}")
@@ -141,4 +181,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

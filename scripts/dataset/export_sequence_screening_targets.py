@@ -1,7 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -14,7 +15,35 @@ from scripts.common.common import (
     make_case_id,
     resolve_experiment,
 )
-from scripts.common.roi_utils import save_nifti, transform_case_with_roi
+from scripts.common.roi_utils import mask_has_foreground, save_nifti, transform_case_with_roi
+
+
+def build_skip_row(
+    row: pd.Series,
+    case_id: str,
+    case_stem: str,
+    roi_column: str,
+    roi_path: Path,
+    eval_mode: str,
+    target_seq: str,
+    fold: int,
+    reason: str,
+) -> dict:
+    return {
+        "eval_mode": eval_mode,
+        "target_seq": target_seq,
+        "fold": fold,
+        "patient_id": row["patient_id"],
+        "seq_raw": row["seq_raw"],
+        "seq_group": row["seq_group"],
+        "case_stem": case_stem,
+        "case_id": case_id,
+        "subset": row.get("subset", ""),
+        "cohort_role": row.get("cohort_role", ""),
+        "roi_column": roi_column,
+        "roi_path": str(roi_path),
+        "skip_reason": reason,
+    }
 
 
 def export_cases(
@@ -32,26 +61,44 @@ def export_cases(
     outside_value: float,
     crop_margin_mm: float,
     clip_label: bool,
-) -> list[dict]:
+) -> tuple[list[dict], list[dict]]:
+    if export_dir.exists():
+        shutil.rmtree(export_dir)
     images_ts = ensure_dir(export_dir / "imagesTs")
     labels_ts = ensure_dir(export_dir / "labelsTs")
     exported_rows = []
+    skipped_rows = []
 
     for _, row in rows_df.iterrows():
         case_stem = str(row["case_stem"])
         case_id = make_case_id(case_stem)
+        roi_path = Path(str(row[roi_column]))
+        if not roi_path.exists():
+            skipped_rows.append(build_skip_row(row, case_id, case_stem, roi_column, roi_path, eval_mode, target_seq, fold, "roi_missing"))
+            continue
+        if not mask_has_foreground(roi_path):
+            skipped_rows.append(build_skip_row(row, case_id, case_stem, roi_column, roi_path, eval_mode, target_seq, fold, "roi_empty"))
+            continue
+
         dst_img = images_ts / f"{case_id}_0000.nii.gz"
         dst_lab = labels_ts / f"{case_id}.nii.gz"
 
-        image_nifti, label_nifti, meta = transform_case_with_roi(
-            image_path=row["image_path"],
-            label_path=row["label_path"],
-            roi_path=row[roi_column],
-            roi_mode=roi_mode,
-            outside_value=outside_value,
-            crop_margin_mm=crop_margin_mm,
-            clip_label=clip_label,
-        )
+        try:
+            image_nifti, label_nifti, meta = transform_case_with_roi(
+                image_path=row["image_path"],
+                label_path=row["label_path"],
+                roi_path=roi_path,
+                roi_mode=roi_mode,
+                outside_value=outside_value,
+                crop_margin_mm=crop_margin_mm,
+                clip_label=clip_label,
+            )
+        except ValueError as exc:
+            if "ROI mask is empty" not in str(exc):
+                raise
+            skipped_rows.append(build_skip_row(row, case_id, case_stem, roi_column, roi_path, eval_mode, target_seq, fold, "roi_empty_after_load"))
+            continue
+
         save_nifti(image_nifti, dst_img)
         save_nifti(label_nifti, dst_lab)
 
@@ -83,8 +130,9 @@ def export_cases(
             }
         )
 
-    pd.DataFrame(exported_rows).to_csv(export_dir / "target_manifest.csv", index=False, encoding="utf-8-sig")
-    return exported_rows
+    if exported_rows:
+        pd.DataFrame(exported_rows).to_csv(export_dir / "target_manifest.csv", index=False, encoding="utf-8-sig")
+    return exported_rows, skipped_rows
 
 
 def resolve_target_specs(target_names: list[str], cfg: dict) -> list[dict]:
@@ -97,6 +145,14 @@ def resolve_target_specs(target_names: list[str], cfg: dict) -> list[dict]:
             members = expand_named_collection(target_name, cfg, sections=("target_bundles", "sequence_bundles"))
         target_specs.append({"target_tag": target_name, "members": members})
     return target_specs
+
+
+def build_infer_script(commands: list[str]) -> str:
+    lines = ["$ErrorActionPreference = \"Stop\""]
+    for index, cmd in enumerate(commands, start=1):
+        lines.append(cmd)
+        lines.append(f'if ($LASTEXITCODE -ne 0) {{ throw "Inference command {index} failed with exit code $LASTEXITCODE" }}')
+    return "\n".join(lines) + "\n"
 
 
 def main():
@@ -179,6 +235,7 @@ def main():
     ].copy()
 
     all_export_rows: list[dict] = []
+    all_skipped_rows: list[dict] = []
     command_blocks_ps = {"internal_cv": [], "external_test": []}
 
     for target_spec in target_specs:
@@ -191,9 +248,9 @@ def main():
                 if fold_rows.empty:
                     continue
 
-                export_dir = ensure_dir(out_dir / "internal_cv" / target / f"fold_{fold}")
+                export_dir = out_dir / "internal_cv" / target / f"fold_{fold}"
                 prediction_dir = ensure_dir(pred_root / "internal_cv" / f"{source_tag}_to_{target}" / f"fold_{fold}")
-                export_rows = export_cases(
+                export_rows, skipped_rows = export_cases(
                     rows_df=fold_rows,
                     export_dir=export_dir,
                     prediction_dir=prediction_dir,
@@ -210,19 +267,21 @@ def main():
                     clip_label=clip_label,
                 )
                 all_export_rows.extend(export_rows)
-                images_ts = export_dir / "imagesTs"
-                cmd = (
-                    f'nnUNetv2_predict -i "{images_ts}" -o "{prediction_dir}" '
-                    f'-d {dataset_id} -c {cfg["nnunet"]["configuration"]} -f {int(fold)}'
-                )
-                command_blocks_ps["internal_cv"].append(cmd)
+                all_skipped_rows.extend(skipped_rows)
+                if export_rows:
+                    images_ts = export_dir / "imagesTs"
+                    cmd = (
+                        f'nnUNetv2_predict -i "{images_ts}" -o "{prediction_dir}" '
+                        f'-d {dataset_id} -c {cfg["nnunet"]["configuration"]} -f {int(fold)}'
+                    )
+                    command_blocks_ps["internal_cv"].append(cmd)
 
         if "external_test" in args.modes:
             target_external = external_df[external_df["seq_group"].isin(target_members)].copy()
             if not target_external.empty:
-                export_dir = ensure_dir(out_dir / "external_test" / target)
+                export_dir = out_dir / "external_test" / target
                 prediction_dir = ensure_dir(pred_root / "external_test" / f"{source_tag}_to_{target}")
-                export_rows = export_cases(
+                export_rows, skipped_rows = export_cases(
                     rows_df=target_external,
                     export_dir=export_dir,
                     prediction_dir=prediction_dir,
@@ -239,27 +298,31 @@ def main():
                     clip_label=clip_label,
                 )
                 all_export_rows.extend(export_rows)
+                all_skipped_rows.extend(skipped_rows)
 
-                ensemble_folds = " ".join(str(fold) for fold in cfg["nnunet"]["ensemble_folds"])
-                images_ts = export_dir / "imagesTs"
-                cmd = (
-                    f'nnUNetv2_predict -i "{images_ts}" -o "{prediction_dir}" '
-                    f'-d {dataset_id} -c {cfg["nnunet"]["configuration"]} -f {ensemble_folds}'
-                )
-                command_blocks_ps["external_test"].append(cmd)
+                if export_rows:
+                    ensemble_folds = " ".join(str(fold) for fold in cfg["nnunet"]["ensemble_folds"])
+                    images_ts = export_dir / "imagesTs"
+                    cmd = (
+                        f'nnUNetv2_predict -i "{images_ts}" -o "{prediction_dir}" '
+                        f'-d {dataset_id} -c {cfg["nnunet"]["configuration"]} -f {ensemble_folds}'
+                    )
+                    command_blocks_ps["external_test"].append(cmd)
 
     evaluation_manifest = pd.DataFrame(all_export_rows)
     evaluation_manifest_path = out_dir.parent / "evaluation_manifest.csv"
     evaluation_manifest.to_csv(evaluation_manifest_path, index=False, encoding="utf-8-sig")
+    if all_skipped_rows:
+        pd.DataFrame(all_skipped_rows).to_csv(out_dir.parent / "skipped_target_cases.csv", index=False, encoding="utf-8-sig")
 
     commands_dir = ensure_dir(out_dir.parent / "commands")
     combined_ps = []
     for mode in ["internal_cv", "external_test"]:
         ps_lines = command_blocks_ps[mode]
-        (commands_dir / f"infer_{mode}.ps1").write_text("\n".join(ps_lines), encoding="utf-8")
+        (commands_dir / f"infer_{mode}.ps1").write_text(build_infer_script(ps_lines), encoding="utf-8")
         combined_ps.extend(ps_lines)
 
-    (commands_dir / "infer_targets.ps1").write_text("\n".join(combined_ps), encoding="utf-8")
+    (commands_dir / "infer_targets.ps1").write_text(build_infer_script(combined_ps), encoding="utf-8")
 
     meta = {
         "source_tag": source_tag,
@@ -277,6 +340,8 @@ def main():
 
     print(f"Saved target test sets to {out_dir}")
     print(f"Saved evaluation manifest to {evaluation_manifest_path}")
+    if all_skipped_rows:
+        print(f"Skipped {len(all_skipped_rows)} target cases due to unusable ROI masks")
     print(f"Saved inference command files to {commands_dir}")
 
 

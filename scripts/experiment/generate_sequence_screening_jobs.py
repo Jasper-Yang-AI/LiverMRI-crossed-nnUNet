@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 from pathlib import Path
@@ -16,8 +16,17 @@ def to_abs(path_like: str | Path) -> Path:
     return Path(path_like).resolve()
 
 
+def append_checked_step(ps_lines: list[str], command: str, step_name: str) -> None:
+    ps_lines.append(command)
+    ps_lines.append(f'if ($LASTEXITCODE -ne 0) {{ throw "Step failed: {step_name} (exit code $LASTEXITCODE)" }}')
+
+
 def build_run_lines(experiment_id: str, exp: dict, args, cfg: dict) -> list[str]:
     dataset_id = int(exp["dataset_id"])
+    source_tag = exp.get("source_tag", experiment_id)
+    dataset_name = f"Dataset{dataset_id:03d}_LiverTumor_{source_tag}"
+    exported_case_manifest = Path(args.nnunet_raw) / dataset_name / "case_manifest.csv"
+
     roi_cfg = cfg.get("roi", {})
     roi_mode = roi_cfg.get("screening_mode", "masked")
     roi_column = roi_cfg.get("screening_roi_column", "roi_mask_dilated_path")
@@ -45,43 +54,69 @@ def build_run_lines(experiment_id: str, exp: dict, args, cfg: dict) -> list[str]
         "New-Item -ItemType Directory -Force -Path $env:nnUNet_raw | Out-Null",
         "New-Item -ItemType Directory -Force -Path $env:nnUNet_preprocessed | Out-Null",
         "New-Item -ItemType Directory -Force -Path $env:nnUNet_results | Out-Null",
+    ]
+
+    append_checked_step(
+        ps_lines,
         (
             f"python -m scripts.dataset.export_sequence_screening_dataset --manifest {quote_ps(str(args.manifest))} "
             f"--study-config {quote_ps(str(args.study_config))} --experiment-id {experiment_id} "
             f"--nnunet-raw {quote_ps(str(args.nnunet_raw))} --roi-column {roi_column} --roi-mode {roi_mode} "
             f"--crop-margin-mm {crop_margin_mm}"
         ),
+        f"{experiment_id} export source dataset",
+    )
+    append_checked_step(
+        ps_lines,
         (
             f"python -m scripts.dataset.generate_splits_json --manifest {quote_ps(str(args.manifest))} "
             f"--study-config {quote_ps(str(args.study_config))} --experiment-id {experiment_id} "
-            f"--nnunet-preprocessed {quote_ps(str(args.nnunet_preprocessed))}"
+            f"--nnunet-preprocessed {quote_ps(str(args.nnunet_preprocessed))} "
+            f"--exported-case-manifest {quote_ps(str(exported_case_manifest))}"
         ),
-        f"nnUNetv2_plan_and_preprocess -d {dataset_id} --verify_dataset_integrity",
-        f"nnUNetv2_train {dataset_id} 3d_fullres 0",
-        f"nnUNetv2_train {dataset_id} 3d_fullres 1",
-        f"nnUNetv2_train {dataset_id} 3d_fullres 2",
-        f"nnUNetv2_train {dataset_id} 3d_fullres 3",
-        f"nnUNetv2_train {dataset_id} 3d_fullres 4",
+        f"{experiment_id} generate splits",
+    )
+    append_checked_step(ps_lines, f"nnUNetv2_plan_and_preprocess -d {dataset_id} --verify_dataset_integrity", f"{experiment_id} plan and preprocess")
+    append_checked_step(ps_lines, f"nnUNetv2_train {dataset_id} 3d_fullres 0", f"{experiment_id} train fold 0")
+    append_checked_step(ps_lines, f"nnUNetv2_train {dataset_id} 3d_fullres 1", f"{experiment_id} train fold 1")
+    append_checked_step(ps_lines, f"nnUNetv2_train {dataset_id} 3d_fullres 2", f"{experiment_id} train fold 2")
+    append_checked_step(ps_lines, f"nnUNetv2_train {dataset_id} 3d_fullres 3", f"{experiment_id} train fold 3")
+    append_checked_step(ps_lines, f"nnUNetv2_train {dataset_id} 3d_fullres 4", f"{experiment_id} train fold 4")
+    append_checked_step(
+        ps_lines,
         (
             f"python -m scripts.dataset.export_sequence_screening_targets --manifest {quote_ps(str(args.manifest))} "
             f"--study-config {quote_ps(str(args.study_config))} --experiment-id {experiment_id} "
             f"--out-dir {quote_ps(str(targets_dir))} --roi-column {roi_column} --roi-mode {roi_mode} "
             f"--crop-margin-mm {crop_margin_mm}"
         ),
-        f"& {quote_ps(str(infer_internal_ps))}",
-        f"& {quote_ps(str(infer_external_ps))}",
+        f"{experiment_id} export targets",
+    )
+    ps_lines.append(f"& {quote_ps(str(infer_internal_ps))}")
+    ps_lines.append(f"& {quote_ps(str(infer_external_ps))}")
+    append_checked_step(
+        ps_lines,
         (
             f"python -m scripts.eval.constrain_predictions_to_liver_roi --evaluation-manifest "
             f"{quote_ps(str(exp_root / 'evaluation_manifest.csv'))} --out-manifest {quote_ps(str(postprocessed_manifest))} "
             f"--out-root {quote_ps(str(postprocessed_pred_root))} --roi-column {postprocess_roi_column} "
             "--keep-original-when-missing-roi"
         ),
+        f"{experiment_id} constrain predictions to liver ROI",
+    )
+    append_checked_step(
+        ps_lines,
         (
             f"python -m scripts.eval.evaluate_predictions --evaluation-manifest {quote_ps(str(postprocessed_manifest))} "
             f"--out-csv {quote_ps(str(results_dir / 'per_case_metrics.csv'))}"
         ),
+        f"{experiment_id} evaluate predictions",
+    )
+    append_checked_step(
+        ps_lines,
         f"python -m scripts.eval.aggregate_results --metrics {quote_ps(str(results_dir / 'per_case_metrics.csv'))} --out-dir {quote_ps(str(reports_dir))}",
-    ]
+        f"{experiment_id} aggregate results",
+    )
 
     return ps_lines
 
@@ -111,7 +146,7 @@ def main():
     cfg = load_yaml(args.study_config)
     out_dir = ensure_dir(args.out_dir)
     rows = []
-    suite_ps_lines = []
+    suite_ps_lines = ["$ErrorActionPreference = \"Stop\""]
 
     for experiment_id, exp in cfg.get("experiments", {}).items():
         if exp.get("stage") != "screening":
@@ -121,7 +156,7 @@ def main():
         commands_dir = ensure_dir(exp_dir / "commands")
         ps_lines = build_run_lines(experiment_id, exp, args, cfg)
         ps_path = commands_dir / f"run_{experiment_id}.ps1"
-        ps_path.write_text("\n".join(ps_lines), encoding="utf-8")
+        ps_path.write_text("\n".join(ps_lines) + "\n", encoding="utf-8")
         suite_ps_lines.append(f"& {quote_ps(str(ps_path))}")
 
         rows.append(
@@ -136,7 +171,7 @@ def main():
         )
 
     pd.DataFrame(rows).to_csv(out_dir / "job_registry.csv", index=False, encoding="utf-8-sig")
-    (out_dir / "run_all_jobs.ps1").write_text("\n".join(suite_ps_lines), encoding="utf-8")
+    (out_dir / "run_all_jobs.ps1").write_text("\n".join(suite_ps_lines) + "\n", encoding="utf-8")
     print(f"Saved sequence screening jobs to: {out_dir}")
 
 

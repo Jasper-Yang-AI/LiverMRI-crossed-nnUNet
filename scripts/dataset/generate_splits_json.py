@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -44,6 +44,7 @@ def main():
     parser.add_argument("--source-tag", default=None)
     parser.add_argument("--dataset-id", type=int, default=None)
     parser.add_argument("--nnunet-preprocessed", required=True)
+    parser.add_argument("--exported-case-manifest", default=None)
     args = parser.parse_args()
 
     cfg = load_yaml(args.study_config)
@@ -54,24 +55,38 @@ def main():
     if dataset_id is None:
         raise ValueError("Provide `--dataset-id` or use `--experiment-id` with a dataset_id in config.")
 
-    df = pd.read_csv(args.manifest)
-    if "fold" not in df.columns:
-        raise ValueError("Manifest must contain `fold` column.")
+    if args.exported_case_manifest:
+        exported_case_manifest = Path(args.exported_case_manifest)
+        if not exported_case_manifest.exists():
+            raise FileNotFoundError(f"Exported case manifest not found: {exported_case_manifest}")
+        df = pd.read_csv(exported_case_manifest)
+        required_cols = {"case_id", "fold"}
+        missing_cols = sorted(required_cols.difference(df.columns))
+        if missing_cols:
+            raise ValueError(f"Exported case manifest is missing required columns: {missing_cols}")
+    else:
+        df = pd.read_csv(args.manifest)
+        if "fold" not in df.columns:
+            raise ValueError("Manifest must contain `fold` column.")
 
-    df = df[(df["fold"] >= 0) & (df["seq_group"].isin(selected_groups))].copy()
+        df = df[(df["fold"] >= 0) & (df["seq_group"].isin(selected_groups))].copy()
+        if df.empty:
+            raise ValueError(f"No rows found for selected groups: {selected_groups}")
+
+        def derive_case_id(row):
+            case_stem = str(row["case_stem"]) if "case_stem" in row and pd.notna(row["case_stem"]) else f"{row['patient_id']}_{row['seq_raw']}"
+            return make_case_id(case_stem)
+
+        df["case_id"] = df.apply(derive_case_id, axis=1)
+
+    df = df[df["fold"] >= 0].copy()
     if df.empty:
-        raise ValueError(f"No rows found for selected groups: {selected_groups}")
-
-    def derive_case_id(row):
-        case_stem = str(row["case_stem"]) if "case_stem" in row and pd.notna(row["case_stem"]) else f"{row['patient_id']}_{row['seq_raw']}"
-        return make_case_id(case_stem)
-
-    df["case_id"] = df.apply(derive_case_id, axis=1)
+        raise ValueError(f"No exported training rows found for {source_tag}.")
 
     splits = []
     for fold in sorted(df["fold"].unique().tolist()):
-        val_cases = sorted(df[df["fold"] == fold]["case_id"].tolist())
-        train_cases = sorted(df[df["fold"] != fold]["case_id"].tolist())
+        val_cases = sorted(df[df["fold"] == fold]["case_id"].astype(str).tolist())
+        train_cases = sorted(df[df["fold"] != fold]["case_id"].astype(str).tolist())
         splits.append({"train": train_cases, "val": val_cases})
 
     dataset_dir = Path(args.nnunet_preprocessed) / f"Dataset{dataset_id:03d}_LiverTumor_{source_tag}"
@@ -86,4 +101,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

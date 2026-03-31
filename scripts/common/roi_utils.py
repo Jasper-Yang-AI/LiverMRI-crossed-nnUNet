@@ -39,6 +39,11 @@ def load_mask_like(path: str | Path, ref_image: nib.Nifti1Image) -> np.ndarray:
     return (np.asarray(mask_image.get_fdata()) > 0.5).astype(np.uint8)
 
 
+def mask_has_foreground(path: str | Path, threshold: float = 0.5) -> bool:
+    mask_image = load_nifti(path)
+    return bool(np.any(np.asarray(mask_image.dataobj) > threshold))
+
+
 def build_nifti(
     data: np.ndarray,
     ref_image: nib.Nifti1Image,
